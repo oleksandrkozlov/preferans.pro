@@ -41,6 +41,7 @@ inline constexpr auto EnterFullScreenIcon = "";
 inline constexpr auto ExitFullScreenIcon = "";
 inline constexpr auto SpeechBubbleIcon = "";
 inline constexpr auto OverallScoreboardIcon = "";
+inline constexpr auto LadderIcon = "";
 inline constexpr auto LogoutIcon = "";
 inline constexpr auto HandshakeIcon = "";
 inline constexpr auto MicOnIcon = "";
@@ -239,6 +240,7 @@ enum class GameLang : std::size_t {
     PREF_X(HalfWhist, PREF_HALF_WHIST, "Піввіста", "Полвиста")                                                         \
     PREF_X(Jungle, "Jungle", "Джунглі", "Джунгли")                                                                     \
     PREF_X(Language, "Language", "Мова", "Язык")                                                                       \
+    PREF_X(Ladder, "LADDER", "ЛІДЕРИ", "ЛИДЕРЫ")                                                                       \
     PREF_X(Lavanda, "Lavanda", "Лаванда", "Лаванда")                                                                   \
     PREF_X(LogOut, "LOG OUT", "ВИХІД", "ВЫХОД")                                                                        \
     PREF_X(LogOutOfTheAccount, "Log out of the account?", "Вийти з облікового запису?", "Выйти из учётной записи?")    \

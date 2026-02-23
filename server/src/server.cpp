@@ -308,6 +308,7 @@ auto reconnectPlayer(const ChannelPtr& ch, const Player::IdView playerId, Player
     // TODO: send SpeechBubble after reconnection
     // TODO: send Offer after reconnection
     co_await sendUserGames(player);
+    co_await sendLadderToOne(ch);
     co_await sendDealCardsFor(ch, playerId, player.hand | rng::to<Hand>);
     co_await sendForehand();
     co_await sendPlayerTurn(makePlayerTurnData());
@@ -504,6 +505,7 @@ auto dealFinished() -> task<bool>
     PREF_DI(finalResult);
     storeGameData(ctx().gameDataPath, ctx().gameData);
     co_await sendUserGames();
+    co_await sendLadder();
     const auto pools = ctx().scoreSheet
         | rv::values
         | rv::transform(&Score::pool)
@@ -593,6 +595,7 @@ auto handleLoginRequest(const Message& msg, const ChannelPtr& ch) -> task<Player
     }
     co_await sendPlayerJoined(session);
     co_await sendUserGames();
+    co_await sendLadder();
     co_return session;
 }
 
@@ -623,6 +626,7 @@ auto handleAuthRequest(const Message& msg, const ChannelPtr& ch) -> task<PlayerS
     }
     co_await sendPlayerJoined(session);
     co_await sendUserGames();
+    co_await sendLadder();
     co_return session;
 }
 

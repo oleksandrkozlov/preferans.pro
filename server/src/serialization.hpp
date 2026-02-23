@@ -258,4 +258,11 @@ auto moveVectorToRepeated(std::vector<T>& input, MutRepeatedField& output) -> vo
     return makeMessage(result).SerializeAsString();
 }
 
+[[nodiscard]] inline auto makeLadder(const std::map<PlayerId, std::int32_t>& mmr) -> std::string
+{
+    auto result = Ladder{};
+    for (const auto& [playerId, value] : mmr) { (*result.mutable_mmr())[playerId] = value; }
+    return makeMessage(result).SerializeAsString();
+}
+
 } // namespace pref

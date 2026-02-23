@@ -265,4 +265,25 @@ inline auto sendUserGames() -> task<>
     for (const auto& player : players()) { co_await sendUserGames(player); }
 }
 
+[[nodiscard]] inline auto totalMmrByPlayerId(const Player::IdView playerId) -> std::int32_t
+{
+    return userByPlayerId(ctx().gameData, playerId)
+        .transform([](const User& user) { return rng::accumulate(user.games(), 0, std::plus{}, &UserGame::mmr); })
+        .value_or(0);
+}
+
+inline auto sendLadderToOne(const ChannelPtr& ch) -> task<>
+{
+    auto ladder = std::map<PlayerId, std::int32_t>{};
+    for (const auto& player : players()) { ladder.emplace(player.id, totalMmrByPlayerId(player.id)); }
+    co_await sendToOne(ch, makeLadder(ladder));
+}
+
+inline auto sendLadder() -> task<>
+{
+    auto ladder = std::map<PlayerId, std::int32_t>{};
+    for (const auto& player : players()) { ladder.emplace(player.id, totalMmrByPlayerId(player.id)); }
+    co_await sendToAll(makeLadder(ladder));
+}
+
 } // namespace pref

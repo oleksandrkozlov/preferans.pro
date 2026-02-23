@@ -199,6 +199,7 @@ struct Player {
     std::string howToPlayChoice;
     PlayerId playsOnBehalfOf;
     int tricksTaken{};
+    int totalMmr{};
     ReadyCheckState readyCheckState = ReadyCheckState::NOT_REQUESTED;
     Offer offer = Offer::NO_OFFER;
 };
@@ -426,6 +427,12 @@ struct OverallScoreboard {
     Table table;
 };
 
+struct LadderMenu {
+    bool isVisible{};
+    // TODO: make windowBoxPos.x relative
+    r::Vector2 windowBoxPos{348.f, BorderMargin + 170.f};
+};
+
 struct MovingCard {
     PlayerId playerId;
     const Card* card{};
@@ -606,6 +613,7 @@ struct Context {
     bool isLoggedIn{};
     bool isLoginInProgress{};
     mutable std::map<PlayerId, Player> players;
+    std::unordered_map<PlayerId, int> ladderMmr;
     EMSCRIPTEN_WEBSOCKET_T ws{};
     int leftCardCount = 10;
     int rightCardCount = 10;
@@ -627,6 +635,7 @@ struct Context {
     ScoreSheetMenu scoreSheet;
     SpeechBubbleMenu speechBubbleMenu;
     OverallScoreboard overallScoreboard;
+    LadderMenu ladderMenu;
     MiserCardsPanel miserCardsPanel;
     LogoutMessage logoutMessage;
     StartGameButton startGameButton;
@@ -661,6 +670,7 @@ struct Context {
         leadSuit.clear();
         passGameTalon.clear();
         scoreSheet.isVisible = false;
+        ladderMenu.isVisible = false;
         miserCardsPanel.clear();
         cardPositions.clear();
         movingCards.clear();
@@ -1287,6 +1297,7 @@ auto finishLogin(auto& response) -> void
     for (const auto& p : response.players()) {
         auto playerId = std::string{p.player_id()};
         auto player = Player{playerId, std::string{p.player_name()}};
+        if (ctx().ladderMmr.contains(playerId)) { player.totalMmr = ctx().ladderMmr.at(playerId); }
         ctx().players.insert_or_assign(std::move(playerId), std::move(player));
     }
     if (ctx().areAllPlayersJoined()) { ctx().startGameButton.isVisible = true; }
@@ -1440,6 +1451,7 @@ auto handlePlayerJoined(const Message& msg) -> void
     auto playerName = std::string{playerJoined->player_name()};
     PREF_DI(playerId, playerName);
     auto player = Player{playerId, std::move(playerName)};
+    if (ctx().ladderMmr.contains(playerId)) { player.totalMmr = ctx().ladderMmr.at(playerId); }
     ctx().players.insert_or_assign(std::move(playerId), std::move(player));
     if (ctx().areAllPlayersJoined()) { ctx().startGameButton.isVisible = true; }
     syncAudioPeers();
@@ -1847,6 +1859,17 @@ auto handleUserGames(const Message& msg) -> void
     updateOverallScoreboardTable();
 }
 
+auto handleLadder(const Message& msg) -> void
+{
+    auto ladder = makeMethod<Ladder>(msg);
+    if (not ladder) { return; }
+    for (const auto& [playerId, mmr] : ladder->mmr()) {
+        ctx().ladderMmr.insert_or_assign(playerId, mmr);
+        if (not ctx().players.contains(playerId)) { continue; }
+        ctx().player(playerId).totalMmr = mmr;
+    }
+}
+
 auto handleOpenTalon(const Message& msg) -> void
 {
     const auto openTalon = makeMethod<OpenTalon>(msg);
@@ -1906,14 +1929,15 @@ auto updateWindowSize() -> void
 
 // clang-format off
 #define PREF_METHODS \
-    PREF_X(AuthResponse) \
     PREF_X(AudioSignal) \
+    PREF_X(AuthResponse) \
     PREF_X(Bidding) \
     PREF_X(DealCards) \
     PREF_X(DealFinished) \
     PREF_X(Forehand) \
     PREF_X(GameState) \
     PREF_X(HowToPlay) \
+    PREF_X(Ladder) \
     PREF_X(LoginResponse) \
     PREF_X(MakeOffer) \
     PREF_X(MiserCards) \
@@ -3265,6 +3289,7 @@ auto handleCardClick(
         ExitFullScreenIcon,
         SpeechBubbleIcon,
         OverallScoreboardIcon,
+        LadderIcon,
         LogoutIcon,
         HandshakeIcon,
         MicOnIcon,
@@ -3444,6 +3469,14 @@ auto drawMicButton() -> void
 {
     withGuiState(STATE_DISABLED, ctx().microphone.isError, [&] {
         drawToolbarButton(1, ctx().microphone.isMuted ? MicOffIcon : MicOnIcon, [&] { toggleMic(); }, false, false);
+    });
+}
+
+auto drawLadderButton() -> void
+{
+    withGuiState(STATE_PRESSED, ctx().ladderMenu.isVisible, [&] {
+        drawToolbarButton(
+            2, LadderIcon, [&] { ctx().ladderMenu.isVisible = not ctx().ladderMenu.isVisible; }, false, false);
     });
 }
 
@@ -3767,7 +3800,7 @@ auto drawScoreSheet() -> void
 auto drawOverallScoreboard() -> void
 {
     if (not isVisible(ctx().overallScoreboard) or std::size(ctx().overallScoreboard.table) < 2) { return; }
-    static constexpr auto maxVisibleRowCount = 13.f;
+    static constexpr auto maxVisibleRowCount = 10.f;
     static const auto cellSize = r::Vector2{VirtualW / 10.f, RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT};
     static auto panelView = r::Rectangle{};
     static auto panelScroll = r::Vector2{};
@@ -3842,6 +3875,69 @@ auto drawOverallScoreboard() -> void
             }
         }
         EndScissorMode();
+    });
+}
+
+auto drawLadder() -> void
+{
+    if (not isVisible(ctx().ladderMenu)) { return; }
+    auto rankedPlayers = players()
+        | rv::transform([](const auto& player) { return std::pair{player.name, player.totalMmr}; })
+        | rng::to_vector;
+    rng::sort(rankedPlayers, [](const auto& lhs, const auto& rhs) {
+        if (lhs.second != rhs.second) { return lhs.second > rhs.second; }
+        return lhs.first < rhs.first;
+    });
+
+    static constexpr auto rowH = RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT;
+    static constexpr auto pad = rowH * 0.6f;
+    static constexpr auto gap = rowH * 0.8f;
+    withGuiFont(ctx().fontS, [&] {
+        const auto title = ctx().localizeText(GameText::Ladder);
+        auto rows = std::vector<std::tuple<std::string, std::string, int>>{};
+        rows.reserve(std::max(1uz, std::size(rankedPlayers)));
+        for (auto&& [i, player] : rankedPlayers | rv::enumerate) {
+            rows.emplace_back(
+                fmt::format("{}. {}", i + 1, player.first),
+                fmt::format("{}{}", player.second > 0 ? "+" : "", player.second),
+                player.second);
+        }
+        auto leftColW = 0.f;
+        auto mmrColW = 0.f;
+        for (const auto& [left, mmr, _] : rows) {
+            leftColW = std::max(leftColW, measureGuiText(left).x);
+            mmrColW = std::max(mmrColW, measureGuiText(mmr).x);
+        }
+        const auto titleW = measureGuiText(title).x + RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT * 2.f;
+        static constexpr auto textSlack = 24.f;
+        static constexpr auto rightPad = 26.f;
+        const auto contentW = (leftColW + textSlack) + gap + (mmrColW + textSlack * 0.5f);
+        const auto windowW = std::max(titleW + pad * 2.f, contentW + pad + rightPad);
+        const auto rowCount = static_cast<float>(std::size(rows));
+        const auto windowH = RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT + pad * 2.f + rowH * rowCount;
+        const auto windowBox = r::Rectangle{ctx().ladderMenu.windowBoxPos.x, ctx().ladderMenu.windowBoxPos.y, windowW, windowH};
+        const auto lineTop = windowBox.y + RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT + pad;
+        const auto leftColX = windowBox.x + pad;
+        const auto mmrColRightX = windowBox.x + windowBox.width - rightPad;
+        ctx().ladderMenu.isVisible = not GuiWindowBox(windowBox, title.c_str());
+        withGuiStyle(LABEL, TEXT_PADDING, GuiGetStyle(STATUSBAR, TEXT_PADDING), [&] {
+            for (auto&& [i, row] : rows | rv::enumerate) {
+                const auto rowTop = lineTop + rowH * static_cast<float>(i);
+                const auto& [left, mmr, mmrValue] = row;
+                const auto mmrTextSize = measureGuiText(mmr);
+                const auto mmrTextX = mmrColRightX - mmrTextSize.x;
+                const auto leftLabelW = std::max(10.f, mmrTextX - gap - leftColX);
+                GuiLabel({leftColX, rowTop, leftLabelW, rowH}, left.c_str());
+                const auto color = mmrValue > 0 ? greenColor() : (mmrValue < 0 ? redColor()
+                                                                                : getGuiColor(LABEL, TEXT_COLOR_NORMAL));
+                ctx().fontS.DrawText(
+                    mmr,
+                    {mmrTextX, rowTop + (rowH - mmrTextSize.y) * 0.5f},
+                    ctx().fontSizeS(),
+                    FontSpacing,
+                    color);
+            }
+        });
     });
 }
 
@@ -4278,12 +4374,14 @@ auto updateDrawFrame([[maybe_unused]] void* ud) -> void
     if (ctx().isLoggedIn) {
         drawOverallScoreboardButton();
         drawMicButton();
+        drawLadderButton();
     }
     drawSettingsButton();
     drawFullScreenButton();
     drawPingAndFps();
     if (ctx().isGameStarted and ctx().isLoggedIn) { drawSpeechBubbleMenu(); }
     if (ctx().isLoggedIn) { drawOverallScoreboard(); }
+    if (ctx().isLoggedIn) { drawLadder(); }
     drawSettingsMenu();
     drawLogoutMessage();
     ctx().target.EndMode();

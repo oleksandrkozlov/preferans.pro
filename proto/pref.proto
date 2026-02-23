@@ -240,6 +240,10 @@ message UserGames {
   repeated UserGame games = 1;
 }
 
+message Ladder {
+  map<string /*player_id*/, int32 /*total_mmr*/> mmr = 1;
+}
+
 
 message Message {
   string method = 1;
