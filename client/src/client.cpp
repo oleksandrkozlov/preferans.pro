@@ -14,7 +14,6 @@
 #include <emscripten/websocket.h>
 #include <range/v3/all.hpp>
 
-#include <utility>
 #define RAYGUI_TEXTSPLIT_MAX_ITEMS 128
 #define RAYGUI_TEXTSPLIT_MAX_TEXT_SIZE 8192
 #define RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT 36
@@ -39,6 +38,7 @@
 #include <list>
 #include <mdspan>
 #include <numbers>
+#include <utility>
 #include <vector>
 
 namespace pref {
@@ -3496,33 +3496,53 @@ auto speechBubbleCooldown() -> void
     });
 }
 
+[[nodiscard]] auto isFuzzyMatch(const std::string_view str, const std::string_view pattern) -> bool
+{
+    if (std::empty(pattern) or rng::all_of(pattern, equalTo('\0'))) { return true; }
+    auto i = 0uz;
+    for (char c : str) {
+        if (std::tolower(c) == std::tolower(pattern[i]) and (++i == std::size(pattern))) { return true; }
+    }
+    return false;
+}
+
+[[nodiscard]] auto fuzzySearch(const std::span<const std::string> strings, const std::string_view pattern)
+    -> std::vector<std::string>
+{
+    return strings
+        | rv::filter([pattern](const std::string_view str) { return isFuzzyMatch(str, pattern); })
+        | rng::to_vector;
+}
+
 auto drawSpeechBubbleMenu() -> void
 {
     if (not isVisible(ctx().speechBubbleMenu)) { return; }
-    static const auto phrases = pref::phrases()
+    static const auto sendButtonOrInputH = ctx().fontSizeS() * 1.5f;
+    const auto inputPos = r::Vector2{
+        ctx().speechBubbleMenu.windowBoxPos.x + SpeechBubbleMenu::Margin,
+        ctx().speechBubbleMenu.windowBoxPos.y + RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT + SpeechBubbleMenu::Margin};
+    const auto phrasesListView = r::Vector2{inputPos.x, inputPos.y + sendButtonOrInputH + SpeechBubbleMenu::Margin};
+    static auto input = std::string(32, '\0');
+    static const auto origPhrases = pref::phrases()
         | rv::split('\n')
         | rv::transform([](auto&& rng) { return rng | ToString; })
         | rv::filter([](auto&& str) { return not std::empty(str) and not str.starts_with('#'); })
         | rng::to_vector;
-    static const auto joinedPhrases = phrases | rv::intersperse(";") | rv::join | ToString;
+    const auto phrases = fuzzySearch(origPhrases, std::string_view{input.c_str()});
+    const auto joinedPhrases = phrases | rv::intersperse(";") | rv::join | ToString;
     static auto scrollIndex = -1;
     static auto activeIndex = -1;
     static const auto listViewEntryH = (getStyle(LISTVIEW, LIST_ITEMS_HEIGHT) + getStyle(LISTVIEW, LIST_ITEMS_SPACING));
-    static constexpr auto phrasesToShow = 11.f;
-    static const auto phrasesListViewH = phrasesToShow * listViewEntryH + getStyle(DEFAULT, BORDER_WIDTH) * 4.f;
-    const auto phrasesListView = r::Vector2{
-        ctx().speechBubbleMenu.windowBoxPos.x + SpeechBubbleMenu::Margin,
-        ctx().speechBubbleMenu.windowBoxPos.y + RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT + SpeechBubbleMenu::Margin};
+    const auto phrasesToShow = std::min(10.f, static_cast<float>(std::size(phrases)));
+    const auto phrasesListViewH = phrasesToShow * listViewEntryH + getStyle(DEFAULT, BORDER_WIDTH) * 4.f;
     const auto sendButton
         = r::Vector2{phrasesListView.x, phrasesListView.y + phrasesListViewH + SpeechBubbleMenu::Margin};
     withGuiFont(ctx().fontS, [&] {
         const auto sendText = ctx().speechBubbleMenu.isSendButtonActive
             ? ctx().localizeText(GameText::Send)
             : fmt::format("{}", ctx().speechBubbleMenu.cooldown);
-        const auto sendTextSize = measureGuiText(sendText);
-        const auto sendButtonH = sendTextSize.y * 1.5f;
-        static const auto phrasesWindowBoxH
-            = (sendButton.y + sendButtonH + SpeechBubbleMenu::Margin) - ctx().speechBubbleMenu.windowBoxPos.y;
+        const auto phrasesWindowBoxH
+            = (sendButton.y + sendButtonOrInputH + SpeechBubbleMenu::Margin) - ctx().speechBubbleMenu.windowBoxPos.y;
         const auto phrasesText = ctx().localizeText(GameText::Phrases);
         ctx().speechBubbleMenu.isVisible = not GuiWindowBox(
             {ctx().speechBubbleMenu.windowBoxPos.x,
@@ -3530,6 +3550,11 @@ auto drawSpeechBubbleMenu() -> void
              SpeechBubbleMenu::windowBoxW,
              phrasesWindowBoxH},
             phrasesText.c_str());
+        GuiTextBox(
+            r::Rectangle{inputPos.x, inputPos.y, SpeechBubbleMenu::ListViewW, sendButtonOrInputH},
+            std::data(input),
+            std::ssize(input),
+            true);
         withGuiStyle(LISTVIEW, TEXT_ALIGNMENT, TEXT_ALIGN_LEFT, [&] {
             GuiListView(
                 {phrasesListView.x, phrasesListView.y, SpeechBubbleMenu::ListViewW, phrasesListViewH},
@@ -3538,7 +3563,7 @@ auto drawSpeechBubbleMenu() -> void
                 &activeIndex);
             withGuiState(STATE_DISABLED, not ctx().speechBubbleMenu.isSendButtonActive, [&] {
                 const auto sent = GuiButton(
-                    {sendButton.x, sendButton.y, SpeechBubbleMenu::ListViewW, sendButtonH}, sendText.c_str());
+                    {sendButton.x, sendButton.y, SpeechBubbleMenu::ListViewW, sendButtonOrInputH}, sendText.c_str());
                 if (sent and activeIndex >= 0 and activeIndex < std::ssize(phrases)) {
                     const auto& phrase = phrases[static_cast<std::size_t>(activeIndex)];
                     sendSpeechBubble(phrase);
