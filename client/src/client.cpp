@@ -428,7 +428,10 @@ struct OverallScoreboard {
 };
 
 struct LadderMenu {
+    float windowBoxW{};
     bool isVisible{};
+    r::Vector2 grabOffset{};
+    bool moving{};
     // TODO: make windowBoxPos.x relative
     r::Vector2 windowBoxPos{348.f, BorderMargin + 170.f};
 };
@@ -670,7 +673,7 @@ struct Context {
         leadSuit.clear();
         passGameTalon.clear();
         scoreSheet.isVisible = false;
-        ladderMenu.isVisible = false;
+        // keep `ladderMenu.isVisible` visible
         miserCardsPanel.clear();
         cardPositions.clear();
         movingCards.clear();
@@ -3912,10 +3915,11 @@ auto drawLadder() -> void
         static constexpr auto textSlack = 24.f;
         static constexpr auto rightPad = 26.f;
         const auto contentW = (leftColW + textSlack) + gap + (mmrColW + textSlack * 0.5f);
-        const auto windowW = std::max(titleW + pad * 2.f, contentW + pad + rightPad);
+        ctx().ladderMenu.windowBoxW = std::max(titleW + pad * 2.f, contentW + pad + rightPad);
         const auto rowCount = static_cast<float>(std::size(rows));
         const auto windowH = RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT + pad * 2.f + rowH * rowCount;
-        const auto windowBox = r::Rectangle{ctx().ladderMenu.windowBoxPos.x, ctx().ladderMenu.windowBoxPos.y, windowW, windowH};
+        const auto windowBox = r::Rectangle{
+            ctx().ladderMenu.windowBoxPos.x, ctx().ladderMenu.windowBoxPos.y, ctx().ladderMenu.windowBoxW, windowH};
         const auto lineTop = windowBox.y + RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT + pad;
         const auto leftColX = windowBox.x + pad;
         const auto mmrColRightX = windowBox.x + windowBox.width - rightPad;
@@ -4345,6 +4349,7 @@ auto updateDrawFrame([[maybe_unused]] void* ud) -> void
     updateMenuPosition(ctx().settingsMenu);
     updateMenuPosition(ctx().speechBubbleMenu);
     updateMenuPosition(ctx().overallScoreboard);
+    updateMenuPosition(ctx().ladderMenu);
 
     ctx().target.BeginMode();
     ctx().window.ClearBackground(getGuiColor(BACKGROUND_COLOR));
