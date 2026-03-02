@@ -154,13 +154,36 @@
       return String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
     }
 
+    function normalizeCard(rawName) {
+      const text = String(rawName ?? "").trim();
+      const [rankRaw, suitRaw] = text.split("_of_");
+      const rankKey = String(rankRaw ?? "").toLowerCase();
+      const suitKey = String(suitRaw ?? "").toLowerCase();
+      const rankPrettyMap = {
+        ace: "A", a: "A",
+        king: "K", k: "K",
+        queen: "Q", q: "Q",
+        jack: "J", j: "J",
+        ten: "10", "10": "10", t: "10",
+        nine: "9", "9": "9",
+        eight: "8", "8": "8",
+        seven: "7", "7": "7",
+      };
+      const suitPrettyMap = {
+        spades: "♠", spade: "♠", s: "♠", "♠": "♠",
+        diamonds: "♦", diamond: "♦", d: "♦", "♦": "♦",
+        clubs: "♣", club: "♣", c: "♣", "♣": "♣",
+        hearts: "♥", heart: "♥", h: "♥", "♥": "♥",
+      };
+      return {
+        rank: rankPrettyMap[rankKey] ?? rankRaw ?? "",
+        suit: suitPrettyMap[suitKey] ?? suitRaw ?? "",
+      };
+    }
+
     function cardPretty(name) {
       if (!name) return "";
-      const [rankRaw, suitRaw] = String(name).split("_of_");
-      const rankMap = { ace: "A", king: "K", queen: "Q", jack: "J", ten: "10", nine: "9", eight: "8", seven: "7" };
-      const suitMap = { spades: "♠", clubs: "♣", hearts: "♥", diamonds: "♦" };
-      const rank = rankMap[rankRaw] ?? rankRaw;
-      const suit = suitMap[suitRaw] ?? suitRaw;
+      const { rank, suit } = normalizeCard(name);
       const suitHtml = (suit === "♥" || suit === "♦")
         ? `<span class="suit-red">${esc(suit)}</span>`
         : esc(suit);
@@ -168,14 +191,14 @@
     }
 
     function sortCardNames(cards) {
-      const suitOrder = { spades: 1, diamonds: 2, clubs: 3, hearts: 4 };
-      const rankOrder = { seven: 1, eight: 2, nine: 3, ten: 4, jack: 5, queen: 6, king: 7, ace: 8 };
+      const suitOrder = { "♠": 1, "♦": 2, "♣": 3, "♥": 4 };
+      const rankOrder = { "7": 1, "8": 2, "9": 3, "10": 4, J: 5, Q: 6, K: 7, A: 8 };
       return [...cards].sort((a, b) => {
-        const [ra, sa] = String(a).split("_of_");
-        const [rb, sb] = String(b).split("_of_");
-        const s = (suitOrder[sa] ?? 99) - (suitOrder[sb] ?? 99);
+        const lhs = normalizeCard(a);
+        const rhs = normalizeCard(b);
+        const s = (suitOrder[lhs.suit] ?? 99) - (suitOrder[rhs.suit] ?? 99);
         if (s) return s;
-        return (rankOrder[ra] ?? 99) - (rankOrder[rb] ?? 99);
+        return (rankOrder[lhs.rank] ?? 99) - (rankOrder[rhs.rank] ?? 99);
       });
     }
 
