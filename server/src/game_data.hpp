@@ -127,6 +127,31 @@ inline auto addOrUpdateUserGame(GameData& gameData, const PlayerIdView playerId,
     }
 }
 
+template<typename PlayerCardsRange>
+inline auto addOrUpdateGameDeal(
+    GameData& gameData,
+    const std::int32_t gameId,
+    const std::int32_t dealId,
+    const PlayerCardsRange& playerCards,
+    const std::vector<CardName>& talon) -> void
+{
+    auto& games = *gameData.mutable_games();
+    const auto gameIt = rng::find(games, gameId, &Game::id);
+    auto* game = gameIt != rng::end(games) ? &(*gameIt) : gameData.add_games();
+    game->set_id(gameId);
+    auto& deals = *game->mutable_deals();
+    const auto dealIt = rng::find(deals, dealId, &Deal::id);
+    auto* deal = dealIt != rng::end(deals) ? &(*dealIt) : game->add_deals();
+    deal->set_id(dealId);
+    deal->clear_hands();
+    deal->clear_talon();
+    for (const auto& [playerId, cards] : playerCards) {
+        auto& series = (*deal->mutable_hands())[playerId];
+        for (const auto& card : cards) { series.add_cards(card); }
+    }
+    for (const auto& card : talon) { deal->add_talon(card); }
+}
+
 // TODO: support token expiration
 inline auto addAuthToken(GameData& data, const PlayerIdView playerId, std::string serverAuthToken) -> void
 {
@@ -223,6 +248,7 @@ inline auto storeGameData(const fs::path& path, const GameData& gameData) -> voi
     for (const auto& user : gameData.users()) {
         for (const auto& game : user.games()) { result = std::max(result, game.id()); }
     }
+    for (const auto& game : gameData.games()) { result = std::max(result, game.id()); }
     return result;
 }
 

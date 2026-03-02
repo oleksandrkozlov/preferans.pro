@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <functional>
 #include <iterator>
+#include <map>
 #include <optional>
 #include <print>
 #include <string>
@@ -33,6 +34,7 @@ Usage:
   pref-cli <path> show --users
   pref-cli <path> show --user <id>
   pref-cli <path> show --games <id>
+  pref-cli <path> show --game <game>
   pref-cli <path> show --tokens <id>
   pref-cli <path> remove --user <id>
   pref-cli <path> remove --games <id>
@@ -91,6 +93,91 @@ auto showGames(const GameData& data, const PlayerIdView playerId) -> void
                 game.whists());
         });
     });
+}
+
+auto showGame(const GameData& data, const std::int32_t gameId) -> void
+{
+    constexpr auto RedSuitAnsi = "\x1b[38;2;255;85;85m";
+    constexpr auto AnsiReset = "\x1b[0m";
+    const auto userNamesById = data.users() | rv::transform([](const User& user) {
+        return std::pair{user.player_id(), user.player_name()};
+    }) | rng::to<std::map<std::string, std::string>>;
+    const auto cardCell = [RedSuitAnsi, AnsiReset](const std::string_view card) -> std::string {
+        const auto rank = cardRank(card);
+        const auto suit = cardSuit(card);
+        const auto shortRank = [&]() -> std::string_view {
+            if (rank == PREF_ACE) { return "A"; }
+            if (rank == PREF_KING) { return "K"; }
+            if (rank == PREF_QUEEN) { return "Q"; }
+            if (rank == PREF_JACK) { return "J"; }
+            if (rank == PREF_TEN) { return "10"; }
+            if (rank == PREF_NINE) { return "9"; }
+            if (rank == PREF_EIGHT) { return "8"; }
+            if (rank == PREF_SEVEN) { return "7"; }
+            return rank;
+        }();
+        const auto suitSign = [&]() -> std::string {
+            if (suit == PREF_SPADES) { return std::string{SpadeSign}; }
+            if (suit == PREF_CLUBS) { return std::string{ClubSign}; }
+            if (suit == PREF_HEARTS) { return fmt::format("{}{}{}", RedSuitAnsi, HeartSign, AnsiReset); }
+            if (suit == PREF_DIAMONDS) { return fmt::format("{}{}{}", RedSuitAnsi, DiamondSign, AnsiReset); }
+            return std::string{suit};
+        }();
+        return shortRank == PREF_TEN ? fmt::format("{}{}", shortRank, suitSign)
+                                     : fmt::format(" {}{}", shortRank, suitSign);
+    };
+    const auto suitValue = [](const std::string_view suit) -> int {
+        static const auto map
+            = std::map<std::string_view, int>{{PREF_SPADES, 1}, {PREF_DIAMONDS, 2}, {PREF_CLUBS, 3}, {PREF_HEARTS, 4}};
+        return map.at(suit);
+    };
+    const auto cardLess = [&](const std::string_view lhs, const std::string_view rhs) {
+        const auto lhsSuit = suitValue(cardSuit(lhs));
+        const auto rhsSuit = suitValue(cardSuit(rhs));
+        const auto lhsRank = rankValue(cardRank(lhs));
+        const auto rhsRank = rankValue(cardRank(rhs));
+        return std::tie(lhsSuit, lhsRank) < std::tie(rhsSuit, rhsRank);
+    };
+    const auto gameIt = rng::find(data.games(), gameId, &Game::id);
+    if (gameIt == rng::end(data.games())) {
+        PREF_W("{} not found", PREF_V(gameId));
+        return;
+    }
+    std::println("Game #{} | deals: {}", gameIt->id(), gameIt->deals_size());
+    for (const auto& deal : gameIt->deals()) {
+        std::println("  Deal #{}", deal.id());
+        auto talonSorted = deal.talon() | rng::to_vector;
+        rng::sort(talonSorted, cardLess);
+        const auto talonCells = talonSorted | rv::transform(cardCell) | rng::to_vector;
+
+        auto hands
+            = deal.hands() | rv::transform([](const auto& entry) { return std::pair{entry.first, entry.second}; })
+            | rng::to_vector;
+        rng::sort(hands, std::less{}, &decltype(hands)::value_type::first);
+        auto maxNameLen = std::size_t{5};
+        for (const auto& [playerId, _] : hands) {
+            const auto nameIt = userNamesById.find(playerId);
+            const auto& playerName = nameIt != std::end(userNamesById) ? nameIt->second : playerId;
+            maxNameLen = std::max(maxNameLen, std::size(playerName));
+        }
+        const auto printRow = [&](const std::string_view name, const auto& cardValues) {
+            const auto spacesAfterColon = maxNameLen - std::size(name) + 2;
+            std::println(
+                "    {}:{}{}",
+                name,
+                std::string(spacesAfterColon, ' '),
+                fmt::format("{}", fmt::join(cardValues, " ")));
+        };
+        printRow("Talon", talonCells);
+        for (const auto& [playerId, cards] : hands) {
+            const auto nameIt = userNamesById.find(playerId);
+            const auto& playerName = nameIt != std::end(userNamesById) ? nameIt->second : playerId;
+            auto cardsSorted = cards.cards() | rng::to_vector;
+            rng::sort(cardsSorted, cardLess);
+            const auto cardsCells = cardsSorted | rv::transform(cardCell) | rng::to_vector;
+            printRow(playerName, cardsCells);
+        }
+    }
 }
 
 auto removeTokens(GameData& data, const PlayerIdView playerId, const std::optional<std::string>& authToken) -> void
@@ -165,6 +252,13 @@ auto main(int argc, char** argv) -> int
         const auto args = docopt::docopt(std::string{pref::Usage}, {std::next(argv), std::next(argv, argc)});
         const auto path = args.at("<path>").asString();
         auto data = pref::loadGameData(path);
+        const auto parseInt32 = [](const std::string& value) -> std::optional<std::int32_t> {
+            auto number = std::int32_t{};
+            const auto first = std::data(value);
+            const auto last = std::next(first, std::ssize(value));
+            if (std::from_chars(first, last, number).ec != std::errc{}) { return std::nullopt; }
+            return number;
+        };
         if (args.at("show").asBool()) {
             if (args.at("--users").asBool()) {
                 pref::listUsers(data);
@@ -174,6 +268,14 @@ auto main(int argc, char** argv) -> int
                 pref::showTokens(data, args.at("<id>").asString());
             } else if (args.at("--games").asBool()) {
                 pref::showGames(data, args.at("<id>").asString());
+            } else if (args.at("--game").asBool()) {
+                const auto game = args.at("<game>").asString();
+                if (const auto gameId = parseInt32(game)) {
+                    pref::showGame(data, *gameId);
+                } else {
+                    PREF_W("Invalid {}", PREF_V(game));
+                    return 1;
+                }
             }
         } else if (args.at("remove").asBool()) {
             if (args.at("--tokens").asBool()) {
@@ -186,14 +288,11 @@ auto main(int argc, char** argv) -> int
                 pref::removeGames(data, args.at("<id>").asString());
             } else if (args.at("--game").asBool()) {
                 const auto game = args.at("<game>").asString();
-                auto num = std::int32_t{};
-                const auto first = std::data(game);
-                const auto last = std::next(first, std::ssize(game));
-                if (std::from_chars(first, last, num).ec != std::errc{}) {
+                if (const auto num = parseInt32(game)) {
+                    pref::removeGame(data, args.at("<id>").asString(), *num);
+                } else {
                     PREF_W("Invalid {}", PREF_V(game));
                     return 1;
-                } else {
-                    pref::removeGame(data, args.at("<id>").asString(), num);
                 }
             }
             pref::storeGameData(path, data);

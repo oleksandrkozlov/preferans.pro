@@ -374,6 +374,7 @@ auto removeCardFromHand(const Player::IdView playerId, CardName card) -> void
 
 auto dealCards() -> task<>
 {
+    ++ctx().dealId;
     const auto suits = std::array{PREF_SPADES, PREF_DIAMONDS, PREF_CLUBS, PREF_HEARTS};
     const auto ranks
         = std::array{PREF_SEVEN, PREF_EIGHT, PREF_NINE, PREF_TEN, PREF_JACK, PREF_QUEEN, PREF_KING, PREF_ACE};
@@ -393,6 +394,11 @@ auto dealCards() -> task<>
     for (auto&& [playerId, hand] : rv::zip(ctx().players | rv::keys, hands)) {
         ctx().player(playerId).hand = hand | rng::to<Hand>;
     }
+    const auto playerCards = ctx().players
+        | rv::transform([](const auto& player) { return std::pair{player.first, player.second.hand}; })
+        | rng::to_vector;
+    addOrUpdateGameDeal(ctx().gameData, ctx().gameId, ctx().dealId, playerCards, ctx().talon.cards);
+    storeGameData(ctx().gameDataPath, ctx().gameData);
     PREF_I("talon: {}", ctx().talon.cards);
     const auto channels = players()
         | rv::transform([](const Player& player) { return std::pair{player.conn.ch, player.id}; })
@@ -541,6 +547,7 @@ auto startGame() -> task<>
     // TODO: use UTC on the server and local time zone on the client
     ctx().gameStarted = localTimeSinceEpochInSec();
     ++ctx().gameId;
+    ctx().dealId = 0;
     PREF_I("gameId: {} started: {} {}", ctx().gameId, formatDate(ctx().gameStarted), formatTime(ctx().gameStarted));
     for (const auto& id : ctx().players | rv::keys) {
         addOrUpdateUserGame(ctx().gameData, id, makeUserGame(ctx().gameId, GameType::RANKED, ctx().gameStarted));
@@ -723,6 +730,7 @@ auto finishDeal() -> task<>
         ctx().scoreSheet = {};
         ctx().gameStarted = {};
         ctx().gameDuration = {};
+        ctx().dealId = {};
         co_return;
     }
     co_await sleepFor(3s, ctx().ex);

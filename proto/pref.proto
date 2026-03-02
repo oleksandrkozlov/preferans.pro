@@ -169,6 +169,10 @@ message IntSeries {
   repeated sint32 values = 1;
 }
 
+message StringSeries {
+  repeated string cards = 1;
+}
+
 message ScoreData {
   IntSeries dump = 1;
   IntSeries pool = 2;
@@ -222,6 +226,17 @@ message UserGame {
   int32 mmr = 8;
 }
 
+message Deal {
+  int32 id = 1;
+  map<string /*player_id*/, StringSeries /* cards */> hands = 2;
+  repeated string talon = 3; // 2 cards
+}
+
+message Game {
+  int32 id = 1;
+  repeated Deal deals = 2;
+}
+
 message User {
   string player_id = 1;
   string player_name = 2;
@@ -233,6 +248,7 @@ message User {
 
 message GameData {
   repeated User users = 1;
+  repeated Game games = 2;
   int32 version = 100;
 }
 

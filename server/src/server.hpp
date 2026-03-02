@@ -212,6 +212,7 @@ struct Context {
     bool isDeclarerFirstMiserTurn{};
 
     std::int32_t gameId{};
+    std::int32_t dealId{};
     std::int64_t gameStarted{};
     std::int32_t gameDuration{};
 };
