@@ -123,6 +123,8 @@
       background: var(--table-total-bg);
     }
     .score-header th { white-space: nowrap; }
+    .score-header th.sortable { cursor: pointer; user-select: none; }
+    .score-header th.sortable.active { color: var(--accent); }
     .col-game { white-space: nowrap; }
     .col-center { text-align: center; white-space: nowrap; }
     .col-choice { text-align: left; white-space: nowrap; width: 120px; }
@@ -155,6 +157,8 @@
       selectedUserId: null,
       selectedGameId: null,
       selectedGameDisplayId: null,
+      scoreSortKey: "game",
+      scoreSortDir: "desc",
       games: [],
       gameDetails: null,
       gameDetailsMessage: ""
@@ -325,14 +329,55 @@
         return {
           id: g.id,
           displayId: desc.length - idx,
+          timestamp: Number(g.timestamp || 0),
           date,
           time,
+          durationSec: Number(g.duration || 0),
           duration: formatDuration(g.duration),
+          mmr,
           result,
+          mmrTotal,
           mmrTotalText,
+          pool: Number(g.pool || 0),
+          dump: Number(g.dump || 0),
+          whists: Number(g.whists || 0),
           pdw: `${g.pool}/${g.dump}/${g.whists}`,
           gameType: g.game_type === "RANKED" ? "Ranked" : "Normal",
         };
+      });
+    }
+
+    function defaultSortDirFor(key) {
+      return key === "type" ? "asc" : "desc";
+    }
+
+    function sortIndicator(key) {
+      if (state.scoreSortKey !== key) return "";
+      return state.scoreSortDir === "asc" ? " ▲" : " ▼";
+    }
+
+    function compareScoreRows(a, b, key) {
+      if (key === "game") return a.displayId - b.displayId;
+      if (key === "date" || key === "time") return a.timestamp - b.timestamp;
+      if (key === "duration") return a.durationSec - b.durationSec;
+      if (key === "result") return a.mmr - b.mmr;
+      if (key === "mmr") return a.mmrTotal - b.mmrTotal;
+      if (key === "pdw") {
+        if (a.pool !== b.pool) return a.pool - b.pool;
+        if (a.dump !== b.dump) return a.dump - b.dump;
+        return a.whists - b.whists;
+      }
+      if (key === "type") return a.gameType.localeCompare(b.gameType);
+      return 0;
+    }
+
+    function sortScoreRows(rows) {
+      const key = state.scoreSortKey;
+      const dir = state.scoreSortDir === "asc" ? 1 : -1;
+      return [...rows].sort((a, b) => {
+        const c = compareScoreRows(a, b, key);
+        if (c !== 0) return c * dir;
+        return (b.displayId - a.displayId);
       });
     }
 
@@ -400,7 +445,7 @@
         return;
       }
 
-      const rows = buildScoreRows(state.games);
+      const rows = sortScoreRows(buildScoreRows(state.games));
       const totals = buildTotals(state.games);
 
       const gamesTable = `
@@ -409,14 +454,14 @@
           <table>
             <thead class="score-header">
               <tr>
-                <th class="col-game">GAME</th>
-                <th>DATE</th>
-                <th>TIME</th>
-                <th>DURATION</th>
-                <th>RESULT</th>
-                <th>MMR</th>
-                <th>P/D/W</th>
-                <th>TYPE</th>
+                <th class="col-game sortable ${state.scoreSortKey === "game" ? "active" : ""}" data-sort-key="game">GAME${sortIndicator("game")}</th>
+                <th class="sortable ${state.scoreSortKey === "date" ? "active" : ""}" data-sort-key="date">DATE${sortIndicator("date")}</th>
+                <th class="sortable ${state.scoreSortKey === "time" ? "active" : ""}" data-sort-key="time">TIME${sortIndicator("time")}</th>
+                <th class="sortable ${state.scoreSortKey === "duration" ? "active" : ""}" data-sort-key="duration">DURATION${sortIndicator("duration")}</th>
+                <th class="sortable ${state.scoreSortKey === "result" ? "active" : ""}" data-sort-key="result">RESULT${sortIndicator("result")}</th>
+                <th class="sortable ${state.scoreSortKey === "mmr" ? "active" : ""}" data-sort-key="mmr">MMR${sortIndicator("mmr")}</th>
+                <th class="sortable ${state.scoreSortKey === "pdw" ? "active" : ""}" data-sort-key="pdw">P/D/W${sortIndicator("pdw")}</th>
+                <th class="sortable ${state.scoreSortKey === "type" ? "active" : ""}" data-sort-key="type">TYPE${sortIndicator("type")}</th>
               </tr>
             </thead>
             <tbody>
@@ -488,6 +533,19 @@
       }
 
       content.innerHTML = gamesTable + dealsSection;
+      content.querySelectorAll("[data-sort-key]").forEach(el => {
+        el.addEventListener("click", () => {
+          const key = String(el.dataset.sortKey || "");
+          if (!key) return;
+          if (state.scoreSortKey === key) {
+            state.scoreSortDir = state.scoreSortDir === "asc" ? "desc" : "asc";
+          } else {
+            state.scoreSortKey = key;
+            state.scoreSortDir = defaultSortDirFor(key);
+          }
+          renderMain();
+        });
+      });
       content.querySelectorAll("[data-game-id]").forEach(el => {
         el.addEventListener("click", async () => {
           state.selectedGameId = Number(el.dataset.gameId);
