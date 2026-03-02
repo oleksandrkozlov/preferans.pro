@@ -145,6 +145,7 @@
       users: [],
       selectedUserId: null,
       selectedGameId: null,
+      selectedGameDisplayId: null,
       games: [],
       gameDetails: null,
       gameDetailsMessage: ""
@@ -269,6 +270,7 @@
         el.addEventListener("click", async () => {
           state.selectedUserId = el.dataset.userId;
           state.selectedGameId = null;
+          state.selectedGameDisplayId = null;
           state.gameDetails = null;
           state.gameDetailsMessage = "";
           await loadGames();
@@ -303,7 +305,7 @@
         mmrDiffById.set(g.id, run);
       }
       const desc = [...asc].reverse();
-      return desc.map(g => {
+      return desc.map((g, idx) => {
         const mmr = Number(g.mmr || 0);
         const resultLabel = mmr === 0 ? "Draw" : (mmr > 0 ? "Win" : "Lost");
         const sign = mmr > 0 ? "+" : "";
@@ -313,6 +315,7 @@
         const { date, time } = formatDateTime(g.timestamp);
         return {
           id: g.id,
+          displayId: desc.length - idx,
           date,
           time,
           duration: formatDuration(g.duration),
@@ -420,7 +423,7 @@
               </tr>
               ${rows.map(r => `
                 <tr>
-                  <td class="col-game"><span class="clickable" data-game-id="${r.id}">${r.id}</span></td>
+                  <td class="col-game"><span class="clickable" data-game-id="${r.id}" data-game-display-id="${r.displayId}">${r.displayId}</span></td>
                   <td>${esc(r.date)}</td>
                   <td>${esc(r.time)}</td>
                   <td>${esc(r.duration)}</td>
@@ -442,7 +445,7 @@
         } else if (state.gameDetails && Array.isArray(state.gameDetails.deals) && state.gameDetails.deals.length > 0) {
           dealsSection = `
         <div class="section">
-          <h2>Game ${state.gameDetails.id} • Deals: ${state.gameDetails.deals.length}</h2>
+          <h2>Game ${state.selectedGameDisplayId ?? state.gameDetails.id} • Deals: ${state.gameDetails.deals.length}</h2>
           ${state.gameDetails.deals.map(deal => `
             <div class="deal">
               <div class="deal-head">Deal ${deal.id} • Declarer: ${esc(deal.declarer_name || deal.declarer_id || "-")} • Contract: ${bidHtml(deal.contract)}</div>
@@ -465,7 +468,7 @@
         </div>
       `;
         } else {
-          dealsSection = `<div class="section"><div class="empty">No deal data for game ${esc(state.selectedGameId)}.</div></div>`;
+          dealsSection = `<div class="section"><div class="empty">No deal data for game ${esc(state.selectedGameDisplayId ?? state.selectedGameId)}.</div></div>`;
         }
       }
 
@@ -473,17 +476,18 @@
       content.querySelectorAll("[data-game-id]").forEach(el => {
         el.addEventListener("click", async () => {
           state.selectedGameId = Number(el.dataset.gameId);
+          state.selectedGameDisplayId = Number(el.dataset.gameDisplayId);
           state.gameDetails = null;
           state.gameDetailsMessage = "";
           renderMain();
           try {
             state.gameDetails = await api(`api/games/${state.selectedGameId}`);
             if (!Array.isArray(state.gameDetails?.deals) || state.gameDetails.deals.length === 0) {
-              state.gameDetailsMessage = `No deal data for game ${state.selectedGameId}.`;
+              state.gameDetailsMessage = `No deal data for game ${state.selectedGameDisplayId ?? state.selectedGameId}.`;
             }
           } catch (err) {
             state.gameDetails = null;
-            state.gameDetailsMessage = `No deal data for game ${state.selectedGameId}.`;
+            state.gameDetailsMessage = `No deal data for game ${state.selectedGameDisplayId ?? state.selectedGameId}.`;
           }
           renderMain();
         });
