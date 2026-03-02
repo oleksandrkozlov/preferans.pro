@@ -95,6 +95,15 @@
     .clickable:hover { text-decoration: underline; }
     .deal { margin-bottom: 12px; border: 1px solid var(--table-border); border-radius: 10px; overflow: hidden; background: var(--table-bg); }
     .deal-head { background: var(--table-head-bg); padding: 8px 10px; font-weight: 700; }
+    .deals-table { table-layout: fixed; }
+    .deals-table th, .deals-table td { width: 25%; }
+    .deals-table .col-player,
+    .deals-table .col-choice,
+    .deals-table .col-deal-tricks,
+    .deals-table .col-cards { width: 25%; }
+    .deals-table .col-choice { width: 25% !important; }
+    .deals-table th, .deals-table td { white-space: normal; overflow-wrap: anywhere; }
+    .deals-table .cards { white-space: normal; }
     .cards { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: nowrap; }
     .heart, .diamond { color: var(--red); font-weight: 700; }
     .muted { color: var(--muted); }
@@ -116,7 +125,7 @@
     .score-header th { white-space: nowrap; }
     .col-game { white-space: nowrap; }
     .col-center { text-align: center; white-space: nowrap; }
-    .col-choice { text-align: center; white-space: nowrap; width: 120px; }
+    .col-choice { text-align: left; white-space: nowrap; width: 120px; }
     .suit-red { color: var(--red); font-weight: 700; }
     .score-good { color: var(--green); font-weight: 700; }
     .score-bad { color: var(--red); font-weight: 700; }
@@ -407,19 +416,19 @@
                 <th>RESULT</th>
                 <th>MMR</th>
                 <th>P/D/W</th>
-                <th>GAME/TYPE</th>
+                <th>TYPE</th>
               </tr>
             </thead>
             <tbody>
               <tr class="score-total">
                 <td class="col-game">TOTAL</td>
-                <td class="col-center">-</td>
-                <td class="col-center">-</td>
+                <td class="col-center"></td>
+                <td class="col-center"></td>
                 <td>${esc(totals.totalDuration)}</td>
                 <td class="${scoreClass(totals.resultText)}">${totals.resultText}</td>
                 <td class="${scoreClass(String(totals.totalMmr))}">${esc(String(totals.totalMmr))}</td>
                 <td>${esc(totals.totalPDW)}</td>
-                <td>${esc(String(totals.totalGames))}</td>
+                <td></td>
               </tr>
               ${rows.map(r => `
                 <tr>
@@ -449,7 +458,13 @@
           ${state.gameDetails.deals.map(deal => `
             <div class="deal">
               <div class="deal-head">Deal ${deal.id} • Declarer: ${esc(deal.declarer_name || deal.declarer_id || "-")} • Contract: ${bidHtml(deal.contract)}</div>
-              <table>
+              <table class="deals-table">
+                <colgroup>
+                  <col style="width:25%">
+                  <col style="width:25%">
+                  <col style="width:25%">
+                  <col style="width:25%">
+                </colgroup>
                 <thead>
                   <tr><th>Player</th><th>Cards</th><th class="col-choice">Choice</th><th>Tricks</th></tr>
                 </thead>
