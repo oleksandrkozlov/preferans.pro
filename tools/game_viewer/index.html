@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PREFBUFF</title>
+  <style>
+    :root {
+      --bg: #282a36;
+      --panel: #44475a;
+      --panel-2: #6272a4;
+      --text: #f8f8f2;
+      --muted: #6272a4;
+      --accent: #8be9fd;
+      --red: #ff5555;
+      --line: #6272a4;
+      --green: #50fa7b;
+      --orange: #ffb86c;
+      --yellow: #f1fa8c;
+      --pink: #ff79c6;
+      --purple: #bd93f9;
+      --table-border: #7e8aa8;
+      --table-bg: #2e3448;
+      --table-bg-alt: #2b3043;
+      --table-head-bg: #252b3c;
+      --table-total-bg: #3a415a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: radial-gradient(1200px 800px at 10% 10%, #44475a 0%, var(--bg) 55%);
+      color: var(--text);
+    }
+    .app {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      min-height: 100vh;
+    }
+    .sidebar {
+      border-right: 1px solid var(--line);
+      background: rgba(40, 42, 54, 0.8);
+      backdrop-filter: blur(3px);
+      padding: 14px;
+      overflow: auto;
+    }
+    .main {
+      padding: 16px;
+      overflow: auto;
+    }
+    h1 { margin: 0 0 6px; font-size: 20px; }
+    .sub { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+    .list-item {
+      border: 1px solid var(--table-border);
+      border-radius: 10px;
+      padding: 10px;
+      margin-bottom: 10px;
+      background: var(--table-bg-alt);
+      cursor: pointer;
+    }
+    .list-item:hover { border-color: var(--accent); }
+    .list-item.active { outline: 2px solid var(--accent); }
+    .name { font-weight: 700; }
+    .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    .section {
+      border: 1px solid var(--table-border);
+      border-radius: 12px;
+      background: var(--table-bg);
+      padding: 12px;
+      margin-bottom: 14px;
+    }
+    .section h2 { margin: 0 0 8px; font-size: 18px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      border: 1px solid var(--table-border);
+      background: var(--table-bg);
+    }
+    th, td {
+      border-bottom: 1px solid var(--table-border);
+      padding: 6px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      color: #d7def5;
+      font-weight: 600;
+      font-size: 12px;
+      background: var(--table-head-bg);
+    }
+    tbody tr { background: var(--table-bg); }
+    tbody tr:nth-child(even) { background: var(--table-bg-alt); }
+    .clickable { cursor: pointer; color: var(--accent); }
+    .clickable:hover { text-decoration: underline; }
+    .deal { margin-bottom: 12px; border: 1px solid var(--table-border); border-radius: 10px; overflow: hidden; background: var(--table-bg); }
+    .deal-head { background: var(--table-head-bg); padding: 8px 10px; font-weight: 700; }
+    .cards { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: nowrap; }
+    .heart, .diamond { color: var(--red); font-weight: 700; }
+    .muted { color: var(--muted); }
+    .empty { color: var(--muted); font-style: italic; padding: 10px 2px; }
+    .pill {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 999px;
+      border: 1px solid var(--table-border);
+      background: var(--table-bg-alt);
+      font-size: 12px;
+    }
+    .score-total td {
+      font-weight: 700;
+      border-top: 2px solid var(--table-border);
+      border-bottom: 2px solid var(--table-border);
+      background: var(--table-total-bg);
+    }
+    .score-header th { white-space: nowrap; }
+    .col-game { white-space: nowrap; }
+    .col-center { text-align: center; white-space: nowrap; }
+    .col-choice { text-align: center; white-space: nowrap; width: 120px; }
+    .suit-red { color: var(--red); font-weight: 700; }
+    .score-good { color: var(--green); font-weight: 700; }
+    .score-bad { color: var(--red); font-weight: 700; }
+    .score-mid { color: var(--orange); font-weight: 700; }
+    @media (max-width: 980px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { border-right: none; border-bottom: 1px solid var(--line); max-height: 36vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <h1>PREFBUFF</h1>
+      <div id="users"></div>
+    </aside>
+    <main class="main">
+      <div id="content" class="section">
+        <div class="empty">Select a user to view games and deals.</div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const state = {
+      users: [],
+      selectedUserId: null,
+      selectedGameId: null,
+      games: [],
+      gameDetails: null,
+      gameDetailsMessage: ""
+    };
+
+    function esc(v) {
+      return String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+    }
+
+    function cardPretty(name) {
+      if (!name) return "";
+      const [rankRaw, suitRaw] = String(name).split("_of_");
+      const rankMap = { ace: "A", king: "K", queen: "Q", jack: "J", ten: "10", nine: "9", eight: "8", seven: "7" };
+      const suitMap = { spades: "♠", clubs: "♣", hearts: "♥", diamonds: "♦" };
+      const rank = rankMap[rankRaw] ?? rankRaw;
+      const suit = suitMap[suitRaw] ?? suitRaw;
+      const suitHtml = (suit === "♥" || suit === "♦")
+        ? `<span class="suit-red">${esc(suit)}</span>`
+        : esc(suit);
+      return `${esc(rank)}${suitHtml}`;
+    }
+
+    function sortCardNames(cards) {
+      const suitOrder = { spades: 1, diamonds: 2, clubs: 3, hearts: 4 };
+      const rankOrder = { seven: 1, eight: 2, nine: 3, ten: 4, jack: 5, queen: 6, king: 7, ace: 8 };
+      return [...cards].sort((a, b) => {
+        const [ra, sa] = String(a).split("_of_");
+        const [rb, sb] = String(b).split("_of_");
+        const s = (suitOrder[sa] ?? 99) - (suitOrder[sb] ?? 99);
+        if (s) return s;
+        return (rankOrder[ra] ?? 99) - (rankOrder[rb] ?? 99);
+      });
+    }
+
+    function cardsHtml(cards) {
+      return sortCardNames(cards).map(cardPretty).join(" ");
+    }
+
+    function formatDuration(totalSec) {
+      const sec = Math.max(0, Number(totalSec || 0));
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      if (h > 0) return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+      return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    }
+
+    function formatDateTime(epochSec) {
+      const d = new Date(Number(epochSec || 0) * 1000);
+      const date = d.toLocaleDateString("en-US", {
+        month: "2-digit",
+        day: "2-digit",
+        year: "numeric"
+      });
+      const time = d.toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true
+      });
+      return { date, time };
+    }
+
+    function nameByPlayerId(playerId) {
+      const user = state.users.find(u => u.player_id === playerId);
+      return user?.player_name || playerId;
+    }
+
+    function normalizeContract(contract) {
+      const text = String(contract ?? "").trim();
+      return (text === "" || text === "-") ? "Pass" : text;
+    }
+
+    function bidHtml(text) {
+      const normalized = normalizeContract(text);
+      const safe = esc(normalized);
+      return safe
+        .replaceAll("♥", `<span class="suit-red">♥</span>`)
+        .replaceAll("♦", `<span class="suit-red">♦</span>`);
+    }
+
+    async function api(path) {
+      const res = await fetch(path);
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${path}`);
+      return await res.json();
+    }
+
+    function renderUsers() {
+      const usersEl = document.getElementById("users");
+      usersEl.innerHTML = state.users.map(u => {
+        const mmrText = `${u.total_mmr >= 0 ? "+" : ""}${u.total_mmr}`;
+        return `
+        <div class="list-item ${u.player_id === state.selectedUserId ? "active" : ""}" data-user-id="${esc(u.player_id)}">
+          <div class="name">${esc(u.player_name)}</div>
+          <div class="meta">MMR: <span class="${scoreClass(mmrText)}">${esc(mmrText)}</span> • games: ${u.games_count}</div>
+        </div>
+        `;
+      }).join("");
+      usersEl.querySelectorAll("[data-user-id]").forEach(el => {
+        el.addEventListener("click", async () => {
+          state.selectedUserId = el.dataset.userId;
+          state.selectedGameId = null;
+          state.gameDetails = null;
+          state.gameDetailsMessage = "";
+          await loadGames();
+          render();
+        });
+      });
+    }
+
+    function dealRows(deal) {
+      const pids = Object.keys(deal.hands || {}).sort();
+      return pids.map(pid => {
+        const rawDecision = deal.decisions?.[pid] ?? (pid === deal.declarer_id ? deal.contract : "");
+        const decision = normalizeContract(rawDecision);
+        const tricks = deal.tricks?.[pid] ?? 0;
+        return `
+          <tr>
+            <td>${esc(nameByPlayerId(pid))}</td>
+            <td class="cards">${cardsHtml(deal.hands[pid] || [])}</td>
+            <td class="col-choice"><span class="pill">${bidHtml(decision)}</span></td>
+            <td>${esc(tricks)}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function buildScoreRows(games) {
+      const asc = [...games].sort((a, b) => a.id - b.id);
+      let run = 0;
+      const mmrDiffById = new Map();
+      for (const g of asc) {
+        run += Number(g.mmr || 0);
+        mmrDiffById.set(g.id, run);
+      }
+      const desc = [...asc].reverse();
+      return desc.map(g => {
+        const mmr = Number(g.mmr || 0);
+        const resultLabel = mmr === 0 ? "Draw" : (mmr > 0 ? "Win" : "Lost");
+        const sign = mmr > 0 ? "+" : "";
+        const result = `${resultLabel} (${sign}${mmr})`;
+        const mmrTotal = Number(mmrDiffById.get(g.id) || 0);
+        const mmrTotalText = `${mmrTotal > 0 ? "+" : ""}${mmrTotal}`;
+        const { date, time } = formatDateTime(g.timestamp);
+        return {
+          id: g.id,
+          date,
+          time,
+          duration: formatDuration(g.duration),
+          result,
+          mmrTotalText,
+          pdw: `${g.pool}/${g.dump}/${g.whists}`,
+          gameType: g.game_type === "RANKED" ? "Ranked" : "Normal",
+        };
+      });
+    }
+
+    function buildTotals(games) {
+      const totalGames = games.length;
+      const totalWins = games.filter(g => Number(g.mmr || 0) > 0).length;
+      const totalLosses = games.filter(g => Number(g.mmr || 0) < 0).length;
+      const denom = totalWins + totalLosses;
+      const winRate = denom > 0 ? Math.floor((totalWins / denom) * 100) : 0;
+      const totalMmr = games.reduce((acc, g) => acc + Number(g.mmr || 0), 0);
+      const totalPool = games.reduce((acc, g) => acc + Number(g.pool || 0), 0);
+      const totalDump = games.reduce((acc, g) => acc + Number(g.dump || 0), 0);
+      const totalWhists = games.reduce((acc, g) => acc + Number(g.whists || 0), 0);
+      const totalDurationSec = games.reduce((acc, g) => acc + Number(g.duration || 0), 0);
+      return {
+        totalGames,
+        winRate,
+        totalMmr,
+        totalPDW: `${totalPool}/${totalDump}/${totalWhists}`,
+        totalDuration: formatDuration(totalDurationSec),
+        resultText: `${winRate}% WIN RATE`,
+      };
+    }
+
+    function scoreClass(cell) {
+      const text = String(cell ?? "").trim();
+      const goodWinrate = 51;
+      const badWinrate = 39;
+      if (!text) return "";
+      if (
+        text.startsWith("+") ||
+        text.startsWith("Win") ||
+        (text.includes("%") && Number.parseInt(text, 10) >= goodWinrate)
+      ) {
+        return "score-good";
+      }
+      if (
+        (text.startsWith("-") && text !== "-") ||
+        text.startsWith("Lost") ||
+        (text.includes("%") && Number.parseInt(text, 10) <= badWinrate)
+      ) {
+        return "score-bad";
+      }
+      if (
+        text === "0" ||
+        text.startsWith("Draw") ||
+        (text.includes("%") &&
+          Number.parseInt(text, 10) < goodWinrate &&
+          Number.parseInt(text, 10) > badWinrate)
+      ) {
+        return "score-mid";
+      }
+      return "";
+    }
+
+    function renderMain() {
+      const content = document.getElementById("content");
+      if (!state.selectedUserId) {
+        content.innerHTML = `<div class="empty">Select a user to view games and deals.</div>`;
+        return;
+      }
+      const user = state.users.find(u => u.player_id === state.selectedUserId);
+      if (!user) {
+        content.innerHTML = `<div class="empty">Selected user is not available.</div>`;
+        return;
+      }
+
+      const rows = buildScoreRows(state.games);
+      const totals = buildTotals(state.games);
+
+      const gamesTable = `
+        <div class="section">
+          <h2>${esc(user.player_name)}</h2>
+          <table>
+            <thead class="score-header">
+              <tr>
+                <th class="col-game">GAME</th>
+                <th>DATE</th>
+                <th>TIME</th>
+                <th>DURATION</th>
+                <th>RESULT</th>
+                <th>MMR</th>
+                <th>P/D/W</th>
+                <th>GAME/TYPE</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="score-total">
+                <td class="col-game">TOTAL</td>
+                <td class="col-center">-</td>
+                <td class="col-center">-</td>
+                <td>${esc(totals.totalDuration)}</td>
+                <td class="${scoreClass(totals.resultText)}">${totals.resultText}</td>
+                <td class="${scoreClass(String(totals.totalMmr))}">${esc(String(totals.totalMmr))}</td>
+                <td>${esc(totals.totalPDW)}</td>
+                <td>${esc(String(totals.totalGames))}</td>
+              </tr>
+              ${rows.map(r => `
+                <tr>
+                  <td class="col-game"><span class="clickable" data-game-id="${r.id}">${r.id}</span></td>
+                  <td>${esc(r.date)}</td>
+                  <td>${esc(r.time)}</td>
+                  <td>${esc(r.duration)}</td>
+                  <td class="${scoreClass(r.result)}">${esc(r.result)}</td>
+                  <td class="${scoreClass(r.mmrTotalText)}">${esc(r.mmrTotalText)}</td>
+                  <td>${esc(r.pdw)}</td>
+                  <td>${esc(r.gameType)}</td>
+                </tr>
+              `).join("") || `<tr><td colspan="8" class="empty">No games</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      let dealsSection = `<div class="section"><div class="empty">Click a game to see deals.</div></div>`;
+      if (state.selectedGameId !== null) {
+        if (state.gameDetailsMessage) {
+          dealsSection = `<div class="section"><div class="empty">${esc(state.gameDetailsMessage)}</div></div>`;
+        } else if (state.gameDetails && Array.isArray(state.gameDetails.deals) && state.gameDetails.deals.length > 0) {
+          dealsSection = `
+        <div class="section">
+          <h2>Game ${state.gameDetails.id} • Deals: ${state.gameDetails.deals.length}</h2>
+          ${state.gameDetails.deals.map(deal => `
+            <div class="deal">
+              <div class="deal-head">Deal ${deal.id} • Declarer: ${esc(deal.declarer_name || deal.declarer_id || "-")} • Contract: ${bidHtml(deal.contract)}</div>
+              <table>
+                <thead>
+                  <tr><th>Player</th><th>Cards</th><th class="col-choice">Choice</th><th>Tricks</th></tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Talon</td>
+                    <td class="cards">${cardsHtml(deal.talon || [])}</td>
+                    <td></td>
+                    <td></td>
+                  </tr>
+                  ${dealRows(deal)}
+                </tbody>
+              </table>
+            </div>
+          `).join("")}
+        </div>
+      `;
+        } else {
+          dealsSection = `<div class="section"><div class="empty">No deal data for game ${esc(state.selectedGameId)}.</div></div>`;
+        }
+      }
+
+      content.innerHTML = gamesTable + dealsSection;
+      content.querySelectorAll("[data-game-id]").forEach(el => {
+        el.addEventListener("click", async () => {
+          state.selectedGameId = Number(el.dataset.gameId);
+          state.gameDetails = null;
+          state.gameDetailsMessage = "";
+          renderMain();
+          try {
+            state.gameDetails = await api(`api/games/${state.selectedGameId}`);
+            if (!Array.isArray(state.gameDetails?.deals) || state.gameDetails.deals.length === 0) {
+              state.gameDetailsMessage = `No deal data for game ${state.selectedGameId}.`;
+            }
+          } catch (err) {
+            state.gameDetails = null;
+            state.gameDetailsMessage = `No deal data for game ${state.selectedGameId}.`;
+          }
+          renderMain();
+        });
+      });
+    }
+
+    function render() {
+      renderUsers();
+      renderMain();
+    }
+
+    async function loadUsers() {
+      state.users = await api("api/users");
+    }
+
+    async function loadGames() {
+      state.games = await api(`api/users/${encodeURIComponent(state.selectedUserId)}/games`);
+    }
+
+    async function boot() {
+      try {
+        await loadUsers();
+        render();
+      } catch (err) {
+        document.getElementById("content").innerHTML =
+          `<div class="empty">Failed to load data: ${esc(err?.message || err)}</div>`;
+      }
+    }
+
+    boot();
+  </script>
+</body>
+</html>
