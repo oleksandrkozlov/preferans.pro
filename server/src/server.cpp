@@ -486,6 +486,24 @@ auto updateScoreSheetForDeal() -> void
 
 auto dealFinished() -> task<bool>
 {
+    const auto declarerId = findDeclarerId().transform([](const Player::Id& id) { return std::string{id}; }).value_or("");
+    const auto contract = std::empty(declarerId) ? std::string{} : ctx().players.at(declarerId).bid;
+    const auto decisions = players() | rv::transform([&](const Player& player) {
+        auto choice = std::string{};
+        if (not declarerId.empty() and player.id == declarerId) {
+            choice = contract;
+        } else if (not std::empty(player.whistingChoice)) {
+            choice = player.whistingChoice;
+        } else if (not std::empty(player.bid)) {
+            choice = player.bid;
+        }
+        return std::pair{player.id, choice};
+    }) | rng::to_vector;
+    const auto tricks
+        = players() | rv::transform([](const Player& player) { return std::pair{player.id, player.tricksTaken}; })
+        | rng::to_vector;
+    addOrUpdateGameDealResult(ctx().gameData, ctx().gameId, ctx().dealId, declarerId, contract, decisions, tricks);
+
     ctx().gameDuration = pref::durationInSec(ctx().gameStarted);
     PREF_I("gameId: {} duration: {}", ctx().gameId, formatDuration(ctx().gameDuration));
     updateScoreSheetForDeal();

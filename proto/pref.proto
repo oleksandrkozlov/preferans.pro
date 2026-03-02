@@ -230,6 +230,10 @@ message Deal {
   int32 id = 1;
   map<string /*player_id*/, StringSeries /* cards */> hands = 2;
   repeated string talon = 3; // 2 cards
+  string declarer_id = 4;
+  string contract = 5;
+  map<string /*player_id*/, string /*contract or whist/pass*/> decisions = 6;
+  map<string /*player_id*/, int32 /*tricks taken*/> tricks = 7;
 }
 
 message Game {

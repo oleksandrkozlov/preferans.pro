@@ -152,6 +152,32 @@ inline auto addOrUpdateGameDeal(
     for (const auto& card : talon) { deal->add_talon(card); }
 }
 
+template<typename PlayerChoicesRange, typename PlayerTricksRange>
+inline auto addOrUpdateGameDealResult(
+    GameData& gameData,
+    const std::int32_t gameId,
+    const std::int32_t dealId,
+    const std::string_view declarerId,
+    const std::string_view contract,
+    const PlayerChoicesRange& playerChoices,
+    const PlayerTricksRange& playerTricks) -> void
+{
+    auto& games = *gameData.mutable_games();
+    const auto gameIt = rng::find(games, gameId, &Game::id);
+    auto* game = gameIt != rng::end(games) ? &(*gameIt) : gameData.add_games();
+    game->set_id(gameId);
+    auto& deals = *game->mutable_deals();
+    const auto dealIt = rng::find(deals, dealId, &Deal::id);
+    auto* deal = dealIt != rng::end(deals) ? &(*dealIt) : game->add_deals();
+    deal->set_id(dealId);
+    deal->set_declarer_id(std::string{declarerId});
+    deal->set_contract(std::string{contract});
+    deal->clear_decisions();
+    deal->clear_tricks();
+    for (const auto& [playerId, choice] : playerChoices) { (*deal->mutable_decisions())[playerId] = choice; }
+    for (const auto& [playerId, tricks] : playerTricks) { (*deal->mutable_tricks())[playerId] = tricks; }
+}
+
 // TODO: support token expiration
 inline auto addAuthToken(GameData& data, const PlayerIdView playerId, std::string serverAuthToken) -> void
 {

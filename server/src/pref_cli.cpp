@@ -21,6 +21,7 @@
 #include <print>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <vector>
 
 namespace pref {
@@ -146,36 +147,67 @@ auto showGame(const GameData& data, const std::int32_t gameId) -> void
     std::println("Game #{} | deals: {}", gameIt->id(), gameIt->deals_size());
     for (const auto& deal : gameIt->deals()) {
         std::println("  Deal #{}", deal.id());
+        const auto visibleLen = [](const std::string_view text) -> std::size_t {
+            auto len = std::size_t{};
+            for (auto i = 0uz; i < std::size(text);) {
+                if (text[i] == '\x1b') {
+                    ++i;
+                    if (i < std::size(text) and text[i] == '[') {
+                        while (i < std::size(text) and text[i] != 'm') { ++i; }
+                        if (i < std::size(text)) { ++i; }
+                    }
+                    continue;
+                }
+                ++len;
+                ++i;
+            }
+            return len;
+        };
+        const auto padRight = [&](const std::string& text, const std::size_t width) {
+            const auto len = visibleLen(text);
+            return fmt::format("{}{}", text, std::string(width > len ? width - len : 0, ' '));
+        };
         auto talonSorted = deal.talon() | rng::to_vector;
         rng::sort(talonSorted, cardLess);
         const auto talonCells = talonSorted | rv::transform(cardCell) | rng::to_vector;
+        const auto talonText = fmt::format("{}", fmt::join(talonCells, " "));
 
         auto hands
             = deal.hands() | rv::transform([](const auto& entry) { return std::pair{entry.first, entry.second}; })
             | rng::to_vector;
         rng::sort(hands, std::less{}, &decltype(hands)::value_type::first);
         auto maxNameLen = std::size_t{5};
-        for (const auto& [playerId, _] : hands) {
-            const auto nameIt = userNamesById.find(playerId);
-            const auto& playerName = nameIt != std::end(userNamesById) ? nameIt->second : playerId;
-            maxNameLen = std::max(maxNameLen, std::size(playerName));
-        }
-        const auto printRow = [&](const std::string_view name, const auto& cardValues) {
-            const auto spacesAfterColon = maxNameLen - std::size(name) + 2;
-            std::println(
-                "    {}:{}{}",
-                name,
-                std::string(spacesAfterColon, ' '),
-                fmt::format("{}", fmt::join(cardValues, " ")));
-        };
-        printRow("Talon", talonCells);
+        auto maxCardsLen = visibleLen(talonText);
+        auto maxChoiceLen = std::size_t{0};
+        auto rows = std::vector<std::tuple<std::string, std::string, std::string, std::int32_t>>{};
         for (const auto& [playerId, cards] : hands) {
             const auto nameIt = userNamesById.find(playerId);
             const auto& playerName = nameIt != std::end(userNamesById) ? nameIt->second : playerId;
+            maxNameLen = std::max(maxNameLen, std::size(playerName));
+            const auto decisionIt = deal.decisions().find(playerId);
+            auto choice = decisionIt != std::end(deal.decisions()) ? decisionIt->second : std::string{};
+            if (choice.empty() and playerId == deal.declarer_id()) { choice = deal.contract(); }
+            const auto tricksIt = deal.tricks().find(playerId);
+            const auto tricks = tricksIt != std::end(deal.tricks()) ? tricksIt->second : 0;
             auto cardsSorted = cards.cards() | rng::to_vector;
             rng::sort(cardsSorted, cardLess);
             const auto cardsCells = cardsSorted | rv::transform(cardCell) | rng::to_vector;
-            printRow(playerName, cardsCells);
+            auto cardsText = fmt::format("{}", fmt::join(cardsCells, " "));
+            maxCardsLen = std::max(maxCardsLen, visibleLen(cardsText));
+            maxChoiceLen = std::max(maxChoiceLen, std::size(choice));
+            rows.emplace_back(std::string{playerName}, std::move(cardsText), std::move(choice), tricks);
+        }
+        std::println(
+            "    {} | {}",
+            fmt::format("{:<{}}", "Talon", maxNameLen),
+            padRight(talonText, maxCardsLen));
+        for (const auto& [name, cardsText, choice, tricks] : rows) {
+            std::println(
+                "    {} | {} | {} | {}",
+                fmt::format("{:<{}}", name, maxNameLen),
+                padRight(cardsText, maxCardsLen),
+                fmt::format("{:<{}}", choice, maxChoiceLen),
+                tricks);
         }
     }
 }
