@@ -394,11 +394,10 @@ auto dealCards() -> task<>
     for (auto&& [playerId, hand] : rv::zip(ctx().players | rv::keys, hands)) {
         ctx().player(playerId).hand = hand | rng::to<Hand>;
     }
-    const auto playerCards = ctx().players
+    ctx().pendingDealHands = ctx().players
         | rv::transform([](const auto& player) { return std::pair{player.first, player.second.hand}; })
         | rng::to_vector;
-    addOrUpdateGameDeal(ctx().gameData, ctx().gameId, ctx().dealId, playerCards, ctx().talon.cards);
-    storeGameData(ctx().gameDataPath, ctx().gameData);
+    ctx().pendingDealTalon = ctx().talon.cards;
     PREF_I("talon: {}", ctx().talon.cards);
     const auto channels = players()
         | rv::transform([](const Player& player) { return std::pair{player.conn.ch, player.id}; })
@@ -502,6 +501,7 @@ auto dealFinished() -> task<bool>
     const auto tricks
         = players() | rv::transform([](const Player& player) { return std::pair{player.id, player.tricksTaken}; })
         | rng::to_vector;
+    addOrUpdateGameDeal(ctx().gameData, ctx().gameId, ctx().dealId, ctx().pendingDealHands, ctx().pendingDealTalon);
     addOrUpdateGameDealResult(ctx().gameData, ctx().gameId, ctx().dealId, declarerId, contract, decisions, tricks);
 
     ctx().gameDuration = pref::durationInSec(ctx().gameStarted);

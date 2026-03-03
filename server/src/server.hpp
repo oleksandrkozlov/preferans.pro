@@ -185,6 +185,8 @@ struct Context {
         talon.clear();
         trick.clear();
         lastTrick.clear();
+        pendingDealHands.clear();
+        pendingDealTalon.clear();
         trump.clear();
         passGame.clear();
         isDeclarerFirstMiserTurn = false;
@@ -203,6 +205,8 @@ struct Context {
     Talon talon;
     std::vector<CardName> lastTrick;
     std::vector<PlayedCard> trick;
+    std::vector<std::pair<Player::Id, Hand>> pendingDealHands;
+    std::vector<CardName> pendingDealTalon;
     std::string trump;
     PassGame passGame;
     Player::Id forehandId;
