@@ -122,6 +122,15 @@ class DataStore:
                 }
                 decisions = dict(sorted(deal.decisions.items(), key=lambda kv: kv[0]))
                 tricks = dict(sorted(deal.tricks.items(), key=lambda kv: kv[0]))
+                scores = {
+                    pid: {
+                        "pool": int(score.pool),
+                        "dump": int(score.dump),
+                        "whists": int(score.whists),
+                        "mmr": int(score.mmr),
+                    }
+                    for pid, score in sorted(deal.scores.items(), key=lambda kv: kv[0])
+                }
                 deals.append(
                     {
                         "id": deal.id,
@@ -132,6 +141,7 @@ class DataStore:
                         "hands": hands,
                         "decisions": decisions,
                         "tricks": tricks,
+                        "scores": scores,
                     }
                 )
             games[str(game.id)] = {"id": game.id, "deals": deals}
@@ -158,8 +168,17 @@ def _text_response(handler: BaseHTTPRequestHandler, text: str, status: int = 200
     handler.wfile.write(body)
 
 
+def _binary_response(handler: BaseHTTPRequestHandler, body: bytes, content_type: str, status: int = 200) -> None:
+    handler.send_response(status)
+    handler.send_header("Content-Type", content_type)
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
 def make_handler(store: DataStore):
     index_path = Path(__file__).with_name("index.html")
+    cards_dir = Path(__file__).with_name("cards")
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_: Any) -> None:
@@ -176,6 +195,19 @@ def make_handler(store: DataStore):
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+                return
+            if path.startswith("/assets/cards/"):
+                filename = Path(path).name
+                card_path = cards_dir / filename
+                if (
+                    filename.endswith(".png")
+                    and card_path.exists()
+                    and card_path.is_file()
+                    and card_path.resolve().parent == cards_dir.resolve()
+                ):
+                    _binary_response(self, card_path.read_bytes(), "image/png")
+                else:
+                    _text_response(self, "Not found", status=404)
                 return
 
             data = store.get()

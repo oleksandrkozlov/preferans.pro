@@ -1,12 +1,5 @@
-build*/
-compile_commands.json
-proto/*.pb.cc
-proto/*.pb.h
 .cache
-tests/__pycache__/
-tests/.pytest_cache/
-tests/pref_pb2.py
-server/data/
+build*/
 client/resources/sounds/game_about_to_start.mp3
 client/resources/sounds/game_started.mp3
 client/resources/sounds/message_received.mp3
@@ -16,3 +9,13 @@ client/resources/sounds/ready_check_received.mp3
 client/resources/sounds/ready_check_requested.mp3
 client/resources/sounds/ready_check_succeeded.mp3
 client/resources/text/phrases-extra.txt
+compile_commands.json
+nohup.out
+proto/*.pb.cc
+proto/*.pb.h
+server/data/
+tests/.pytest_cache/
+tests/__pycache__/
+tests/pref_pb2.py
+tools/prefbuff/__pycache__/
+tools/prefbuff/_generated/

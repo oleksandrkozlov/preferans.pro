@@ -152,7 +152,7 @@ inline auto addOrUpdateGameDeal(
     for (const auto& card : talon) { deal->add_talon(card); }
 }
 
-template<typename PlayerChoicesRange, typename PlayerTricksRange>
+template<typename PlayerChoicesRange, typename PlayerTricksRange, typename PlayerScoresRange>
 inline auto addOrUpdateGameDealResult(
     GameData& gameData,
     const std::int32_t gameId,
@@ -160,7 +160,8 @@ inline auto addOrUpdateGameDealResult(
     const std::string_view declarerId,
     const std::string_view contract,
     const PlayerChoicesRange& playerChoices,
-    const PlayerTricksRange& playerTricks) -> void
+    const PlayerTricksRange& playerTricks,
+    const PlayerScoresRange& playerScores) -> void
 {
     auto& games = *gameData.mutable_games();
     const auto gameIt = rng::find(games, gameId, &Game::id);
@@ -174,8 +175,16 @@ inline auto addOrUpdateGameDealResult(
     deal->set_contract(std::string{contract});
     deal->clear_decisions();
     deal->clear_tricks();
+    deal->clear_scores();
     for (const auto& [playerId, choice] : playerChoices) { (*deal->mutable_decisions())[playerId] = choice; }
     for (const auto& [playerId, tricks] : playerTricks) { (*deal->mutable_tricks())[playerId] = tricks; }
+    for (const auto& [playerId, score] : playerScores) {
+        auto& dst = (*deal->mutable_scores())[playerId];
+        dst.set_pool(score.pool());
+        dst.set_dump(score.dump());
+        dst.set_whists(score.whists());
+        dst.set_mmr(score.mmr());
+    }
 }
 
 // TODO: support token expiration

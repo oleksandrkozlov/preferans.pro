@@ -26,7 +26,7 @@ inline constexpr auto CardAspectRatio = OriginalCardWidth / OriginalCardHeight;
 inline constexpr auto CardHeight = VirtualH / 5.f;
 inline constexpr auto CardWidth = CardHeight * CardAspectRatio;
 inline constexpr auto CardOverlapX = CardWidth * 0.51f;
-inline constexpr auto CardOverlapY = CardHeight * 0.26f;
+inline constexpr auto CardOverlapY = CardHeight * 0.24f;
 inline constexpr auto CardBorderMargin = VirtualW / 30.f;
 inline constexpr auto MyCardBorderMarginY = CardHeight / 10.8f;
 inline constexpr auto CardInnerMargin = VirtualW / 100.f;
@@ -133,16 +133,6 @@ inline constexpr auto PREF_ACE_OF_HEARTS_CARD = 0x1F0B1;
     PREF_X(PREF_ACE_OF_SPADES) PREF_X(PREF_ACE_OF_CLUBS) PREF_X(PREF_ACE_OF_DIAMONDS) PREF_X(PREF_ACE_OF_HEARTS)
 // clang-format on
 
-[[nodiscard]] constexpr auto cardNameCodepoint(const CardNameView cardName) noexcept -> int
-{
-#define PREF_X(PREF_CARD_NAME)                                                                                         \
-    if (cardName == (PREF_CARD_NAME)) { return PREF_CARD_NAME##_CARD; }
-    PREF_CARDS
-#undef PREF_X
-    PREF_DE(cardName);
-    std::unreachable();
-}
-
 #define PREF_NUMBER_01 "❶"
 #define PREF_NUMBER_02 "❷"
 #define PREF_NUMBER_03 "❸"
@@ -158,6 +148,16 @@ inline constexpr auto PREF_ACE_OF_HEARTS_CARD = 0x1F0B1;
 #define PREF_COW_FACE "\xF0\x9F\x90\xAE"
 #define PREF_CAT_FACE "\xF0\x9F\x90\xB1"
 #define PREF_MONKEY_FACE "\xF0\x9F\x90\xB5"
+
+[[nodiscard]] constexpr auto cardNameCodepoint(const CardNameView cardName) noexcept -> int
+{
+#define PREF_X(PREF_CARD_NAME)                                                                                         \
+    if (cardName == (PREF_CARD_NAME)) { return PREF_CARD_NAME##_CARD; }
+    PREF_CARDS
+#undef PREF_X
+    PREF_DE(cardName);
+    std::unreachable();
+}
 
 [[nodiscard]] constexpr auto prettifyNumber(const int tricksTaken) noexcept -> std::string_view
 {
@@ -256,7 +256,7 @@ enum class GameLang : std::size_t {
     PREF_X(Openly, PREF_OPENLY, "У світлу", "В светлую")                                                               \
     PREF_X(Other, "Other", "Інше", "Другое")                                                                           \
     PREF_X(OverallScoreboard, "SCOREBOARD", "ТАБЛИЦЯ РЕЗУЛЬТАТІВ", "ТАБЛИЦА РЕЗУЛЬТАТОВ")                              \
-    PREF_X(PDW, "P/D/W", "П/Г/В", "П/Г/В")                                                                             \
+    PREF_X(DPW, "D/P/W", "Г/П/В", "Г/П/В")                                                                             \
     PREF_X(PLAY, "PLAY", "ГРАТИ", "ИГРАТЬ")                                                                            \
     PREF_X(Pass, PREF_PASS, "Пас", "Пас")                                                                              \
     PREF_X(Passing, "Passing", "Розпаси", "Распасы")                                                                   \
@@ -314,7 +314,15 @@ inline constexpr auto HowToPlayButtons = std::array{GameText::Openly, GameText::
     static constexpr char result[] = {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wc23-extensions"
+#if defined(__has_embed)
+#if __has_embed("../client/resources/text/phrases.txt")
 #embed "../client/resources/text/phrases.txt"
+#else
+#embed "../client/resources/text/default-phrases.txt"
+#endif
+#else
+#embed "../client/resources/text/default-phrases.txt"
+#endif
 #pragma GCC diagnostic pop
     };
     return {result, sizeof(result)};

@@ -151,7 +151,7 @@ cmake --build build-server --target test_server
 The main source code of this project is licensed under AGPL-3.0-only.
 Bundled assets keep their original licenses and are **not** covered by AGPL.
 
-- **Cards**: [Public Domain](client/resources/cards/LICENSE)
+- **Cards**: [Public Domain](client/resources/cards/LICENSE), [Creative Commons Zero, CC0](tools/prefbuff/cards/LICENSE)
 - **Fonts**: [DejaVu / Font Awesome Free (OFL)](client/resources/fonts/LICENSE)
 - **Shell**: [MIT](client/resources/html/LICENSE)
 - **Styles**: [zlib / AGPL-3.0-only](client/resources/styles/LICENSE)

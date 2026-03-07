@@ -89,8 +89,8 @@ auto showGames(const GameData& data, const PlayerIdView playerId) -> void
                 formatDuration(game.duration()),
                 game.game_type() == GameType::NORMAL ? "Normal" : "Ranked",
                 game.mmr(),
-                game.pool(),
                 game.dump(),
+                game.pool(),
                 game.whists());
         });
     });
@@ -179,7 +179,9 @@ auto showGame(const GameData& data, const std::int32_t gameId) -> void
         auto maxNameLen = std::size_t{5};
         auto maxCardsLen = visibleLen(talonText);
         auto maxChoiceLen = std::size_t{0};
-        auto rows = std::vector<std::tuple<std::string, std::string, std::string, std::int32_t>>{};
+        auto maxDpwLen = std::size_t{0};
+        auto maxMmrLen = std::size_t{0};
+        auto rows = std::vector<std::tuple<std::string, std::string, std::string, std::int32_t, std::string, std::string>>{};
         for (const auto& [playerId, cards] : hands) {
             const auto nameIt = userNamesById.find(playerId);
             const auto& playerName = nameIt != std::end(userNamesById) ? nameIt->second : playerId;
@@ -195,19 +197,27 @@ auto showGame(const GameData& data, const std::int32_t gameId) -> void
             auto cardsText = fmt::format("{}", fmt::join(cardsCells, " "));
             maxCardsLen = std::max(maxCardsLen, visibleLen(cardsText));
             maxChoiceLen = std::max(maxChoiceLen, std::size(choice));
-            rows.emplace_back(std::string{playerName}, std::move(cardsText), std::move(choice), tricks);
+            const auto scoreIt = deal.scores().find(playerId);
+            const auto pool = scoreIt != std::end(deal.scores()) ? scoreIt->second.pool() : 0;
+            const auto dump = scoreIt != std::end(deal.scores()) ? scoreIt->second.dump() : 0;
+            const auto whists = scoreIt != std::end(deal.scores()) ? scoreIt->second.whists() : 0;
+            const auto mmr = scoreIt != std::end(deal.scores()) ? scoreIt->second.mmr() : 0;
+            const auto dpw = fmt::format("{}/{}/{}", dump, pool, whists);
+            const auto mmrText = fmt::format("{:+d}", mmr);
+            maxDpwLen = std::max(maxDpwLen, std::size(dpw));
+            maxMmrLen = std::max(maxMmrLen, std::size(mmrText));
+            rows.emplace_back(std::string{playerName}, std::move(cardsText), std::move(choice), tricks, dpw, mmrText);
         }
-        std::println(
-            "    {} | {}",
-            fmt::format("{:<{}}", "Talon", maxNameLen),
-            padRight(talonText, maxCardsLen));
-        for (const auto& [name, cardsText, choice, tricks] : rows) {
+        std::println("    {} | {}", fmt::format("{:<{}}", "Talon", maxNameLen), padRight(talonText, maxCardsLen));
+        for (const auto& [name, cardsText, choice, tricks, dpw, mmrText] : rows) {
             std::println(
-                "    {} | {} | {} | {}",
+                "    {} | {} | {} | {} | {} | {}",
                 fmt::format("{:<{}}", name, maxNameLen),
                 padRight(cardsText, maxCardsLen),
                 fmt::format("{:<{}}", choice, maxChoiceLen),
-                tricks);
+                fmt::format("{:>2}", tricks),
+                fmt::format("{:<{}}", dpw, maxDpwLen),
+                fmt::format("{:>{}}", mmrText, maxMmrLen));
         }
     }
 }

@@ -1,0 +1,1633 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PREFBUFF - Preferans Statistics</title>
+  <style>
+    :root {
+      --bg: #282a36;
+      --panel: #44475a;
+      --panel-2: #6272a4;
+      --text: #f8f8f2;
+      --muted: #6272a4;
+      --accent: #8be9fd;
+      --red: #ff5555;
+      --line: #6272a4;
+      --green: #50fa7b;
+      --orange: #ffb86c;
+      --yellow: #f1fa8c;
+      --pink: #ff79c6;
+      --purple: #bd93f9;
+      --table-border: #7e8aa8;
+      --table-bg: #2e3448;
+      --table-bg-alt: #2b3043;
+      --table-head-bg: #252b3c;
+      --table-total-bg: #3a415a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: radial-gradient(1200px 800px at 10% 10%, #44475a 0%, var(--bg) 55%);
+      color: var(--text);
+    }
+    .app {
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      min-height: 100vh;
+    }
+    .sidebar {
+      border-right: 1px solid var(--line);
+      background: rgba(40, 42, 54, 0.8);
+      backdrop-filter: blur(3px);
+      padding: 14px;
+      overflow: auto;
+    }
+    .main {
+      padding: 16px;
+      overflow: auto;
+    }
+    h1 { margin: 0 0 6px; font-size: 32px; text-align: center; cursor: pointer; }
+    .sub { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+    .list-item {
+      border: 1px solid var(--table-border);
+      border-radius: 10px;
+      padding: 10px;
+      margin-bottom: 10px;
+      background: var(--table-bg-alt);
+      cursor: pointer;
+    }
+    .list-item:hover { border-color: var(--accent); }
+    .list-item.active { outline: 2px solid var(--accent); }
+    .name { font-weight: 700; }
+    .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    .section {
+      border: 1px solid var(--table-border);
+      border-radius: 12px;
+      background: var(--table-bg);
+      padding: 12px;
+      margin-bottom: 14px;
+    }
+    .section h2 { margin: 0 0 8px; font-size: 18px; }
+    .section h2.clearable {
+      cursor: pointer;
+    }
+    .summary-cards {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .summary-card {
+      border: 1px solid var(--table-border);
+      border-radius: 10px;
+      background: var(--table-bg-alt);
+      padding: 7px 8px;
+      min-width: 0;
+    }
+    .summary-label {
+      color: var(--muted);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 3px;
+      font-weight: 700;
+    }
+    .summary-value {
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .games-block {
+      margin-bottom: 14px;
+    }
+    .trend-panel {
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      padding: 0;
+      margin-bottom: 10px;
+    }
+    .trend-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .trend-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 700;
+      color: var(--muted);
+    }
+    .trend-value { font-size: 12px; color: #d7def5; }
+    .trend-svg {
+      width: 100%;
+      height: 96px;
+      display: block;
+      border-radius: 8px;
+      background: #252b3c;
+      border: 1px solid rgba(126, 138, 168, 0.45);
+    }
+    .hand-stats {
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      padding: 0;
+      margin-bottom: 10px;
+    }
+    .hand-stats-grid {
+      display: flex;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      gap: 8px;
+      padding-bottom: 2px;
+    }
+    .hand-stat-card {
+      border: 1px solid var(--table-border);
+      border-radius: 8px;
+      background: var(--table-bg);
+      padding: 8px;
+      min-width: 0;
+      flex: 1 1 0;
+    }
+    .hand-stat-card[data-action]:hover {
+      border-color: var(--accent);
+    }
+    .hand-stat-card[data-action] {
+      cursor: pointer;
+    }
+    .hand-stat-card.is-active {
+      border-color: var(--accent);
+      box-shadow: inset 0 0 0 1px rgba(139, 233, 253, 0.35);
+    }
+    .hand-stat-label {
+      color: var(--muted);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 4px;
+      font-weight: 700;
+    }
+    .hand-stat-value {
+      color: #d7def5;
+      font-size: 16px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .hand-stat-delta {
+      margin-left: 6px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .hand-stat-prefix {
+      color: var(--muted);
+    }
+    .hand-stat-sub {
+      margin-top: 2px;
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .stat-tooltip {
+      position: fixed;
+      z-index: 60;
+      pointer-events: none;
+      max-width: none;
+      border: 1px solid var(--table-border);
+      border-radius: 8px;
+      background: rgba(37, 43, 60, 0.96);
+      color: #d7def5;
+      font-size: 12px;
+      line-height: 1.35;
+      white-space: pre-line;
+      padding: 8px 9px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      display: none;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      border: 1px solid var(--table-border);
+      background: var(--table-bg);
+    }
+    .games-table-wrap {
+      max-height: none;
+      overflow-y: auto;
+      border: 1px solid var(--table-border);
+      border-radius: 8px;
+    }
+    .games-table-wrap table {
+      border: none;
+      border-radius: 0;
+    }
+    .filtered-table-wrap {
+      max-height: none;
+      overflow-y: auto;
+      border: 1px solid var(--table-border);
+      border-radius: 8px;
+    }
+    .filtered-table-wrap table {
+      border: none;
+      border-radius: 0;
+    }
+    .filtered-deals-table {
+      table-layout: fixed;
+    }
+    .filtered-deals-table .cards {
+      white-space: normal;
+    }
+    .filtered-table-wrap thead th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    .games-table-wrap .score-header th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    th, td {
+      border-bottom: 1px solid var(--table-border);
+      padding: 6px 8px;
+      text-align: left;
+      vertical-align: middle;
+    }
+    th {
+      color: #d7def5;
+      font-weight: 600;
+      font-size: 12px;
+      background: var(--table-head-bg);
+    }
+    tbody tr { background: var(--table-bg); }
+    tbody tr:nth-child(even) { background: var(--table-bg-alt); }
+    .clickable { cursor: pointer; color: var(--accent); }
+    .clickable:hover { text-decoration: underline; }
+    .game-row { cursor: pointer; }
+    .game-row:hover td { background: rgba(139, 233, 253, 0.08); }
+    .game-row.selected td {
+      background: rgba(139, 233, 253, 0.18);
+      box-shadow: inset 0 1px 0 rgba(139, 233, 253, 0.22), inset 0 -1px 0 rgba(139, 233, 253, 0.22);
+    }
+    .game-row.selected td:first-child {
+      box-shadow: inset 3px 0 0 var(--accent), inset 0 1px 0 rgba(139, 233, 253, 0.22), inset 0 -1px 0 rgba(139, 233, 253, 0.22);
+    }
+    .deal { margin-bottom: 12px; border: 1px solid var(--table-border); border-radius: 10px; overflow: hidden; background: var(--table-bg); }
+    .deal-head { background: var(--table-head-bg); padding: 8px 10px; font-weight: 700; }
+    .deals-table { table-layout: fixed; }
+    .deals-table .col-decision { width: auto; }
+    .deals-table th, .deals-table td { white-space: normal; overflow-wrap: anywhere; }
+    .deals-table .cards { white-space: normal; }
+    .cards-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      align-items: center;
+      min-height: 26px;
+    }
+    .card-img {
+      width: 22px;
+      height: 32px;
+      object-fit: contain;
+      flex: 0 0 auto;
+    }
+    .card-text-fallback {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      color: #d7def5;
+      padding: 2px 4px;
+      border: 1px solid rgba(126, 138, 168, 0.35);
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.03);
+      white-space: nowrap;
+    }
+    .heart, .diamond { color: var(--red); font-weight: 700; }
+    .muted { color: var(--muted); }
+    .empty { color: var(--muted); font-style: italic; padding: 10px 2px; }
+    .pill {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 999px;
+      border: 1px solid var(--table-border);
+      background: var(--table-bg-alt);
+      font-size: 12px;
+    }
+    .score-total td {
+      font-weight: 700;
+      border-top: 2px solid var(--table-border);
+      border-bottom: 2px solid var(--table-border);
+      background: var(--table-total-bg);
+    }
+    .score-header th { white-space: nowrap; }
+    .score-header th.sortable { cursor: pointer; user-select: none; }
+    .score-header th.sortable.active { color: var(--accent); }
+    .col-game { white-space: nowrap; }
+    .col-center { text-align: center; white-space: nowrap; }
+    .col-decision { text-align: left; white-space: nowrap; width: 120px; }
+    .suit-red { color: var(--red); font-weight: 700; }
+    .score-good { color: var(--green); font-weight: 700; }
+    .score-bad { color: var(--red); font-weight: 700; }
+    .score-mid { color: var(--orange); font-weight: 700; }
+    @media (max-width: 980px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { border-right: none; border-bottom: 1px solid var(--line); max-height: 36vh; }
+      .summary-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 640px) {
+      .summary-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 460px) {
+      .summary-cards { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <h1 id="app-title" title="Clear selection">PREFBUFF</h1>
+      <div id="users"></div>
+    </aside>
+    <main class="main">
+      <div id="content" class="section">
+        <div class="empty">Select a user to view games and deals.</div>
+      </div>
+    </main>
+  </div>
+  <div id="stat-tooltip" class="stat-tooltip"></div>
+
+  <script>
+    const state = {
+      users: [],
+      selectedUserId: null,
+      selectedGameId: null,
+      selectedGameDisplayId: null,
+      scoreSortKey: "game",
+      scoreSortDir: "desc",
+      games: [],
+      gameDetails: null,
+      gameDetailsMessage: "",
+      handStats: null,
+      handStatsCacheKey: "",
+      handStatsLoading: false,
+      handStatsError: "",
+      handMatches: { hands: [], akq: [], akqj: [], aces3: [], declarer: [], pass: [], whist: [] },
+      activeHandFilter: "",
+      pendingGameScrollId: null
+    };
+    const VIEW_STATE_KEY = "prefbuff_view_state_v1";
+    let refreshTimer = null;
+    let refreshInFlight = false;
+    const statTooltipEl = document.getElementById("stat-tooltip");
+
+    function esc(v) {
+      return String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+    }
+
+    function normalizeCard(rawName) {
+      const text = String(rawName ?? "").trim();
+      const [rankRaw, suitRaw] = text.split("_of_");
+      const rankKey = String(rankRaw ?? "").toLowerCase();
+      const suitKey = String(suitRaw ?? "").toLowerCase();
+      const rankPrettyMap = {
+        ace: "A", a: "A",
+        king: "K", k: "K",
+        queen: "Q", q: "Q",
+        jack: "J", j: "J",
+        ten: "10", "10": "10", t: "10",
+        nine: "9", "9": "9",
+        eight: "8", "8": "8",
+        seven: "7", "7": "7",
+      };
+      const suitPrettyMap = {
+        spades: "♠", spade: "♠", s: "♠", "♠": "♠",
+        diamonds: "♦", diamond: "♦", d: "♦", "♦": "♦",
+        clubs: "♣", club: "♣", c: "♣", "♣": "♣",
+        hearts: "♥", heart: "♥", h: "♥", "♥": "♥",
+      };
+      return {
+        rank: rankPrettyMap[rankKey] ?? rankRaw ?? "",
+        suit: suitPrettyMap[suitKey] ?? suitRaw ?? "",
+      };
+    }
+
+    function cardPretty(name) {
+      if (!name) return "";
+      const { rank, suit } = normalizeCard(name);
+      const suitHtml = (suit === "♥" || suit === "♦")
+        ? `<span class="suit-red">${esc(suit)}</span>`
+        : esc(suit);
+      return `${esc(rank)}${suitHtml}`;
+    }
+
+    function sortCardNames(cards) {
+      const suitOrder = { "♠": 1, "♦": 2, "♣": 3, "♥": 4 };
+      const rankOrder = { "7": 1, "8": 2, "9": 3, "10": 4, J: 5, Q: 6, K: 7, A: 8 };
+      return [...cards].sort((a, b) => {
+        const lhs = normalizeCard(a);
+        const rhs = normalizeCard(b);
+        const s = (suitOrder[lhs.suit] ?? 99) - (suitOrder[rhs.suit] ?? 99);
+        if (s) return s;
+        return (rankOrder[lhs.rank] ?? 99) - (rankOrder[rhs.rank] ?? 99);
+      });
+    }
+
+    function cardsHtml(cards) {
+      return `<span class="cards-list">${sortCardNames(cards).map(cardImageHtml).join("")}</span>`;
+    }
+
+    function cardAssetName(name) {
+      const text = String(name ?? "").trim();
+      if (!text.includes("_of_")) return null;
+      const [rankRaw, suitRaw] = text.split("_of_");
+      const rankKey = String(rankRaw ?? "").toLowerCase();
+      const suitKey = String(suitRaw ?? "").toLowerCase();
+      const rankFileMap = {
+        ace: "ace",
+        king: "king",
+        queen: "queen",
+        jack: "jack",
+        ten: "10",
+        "10": "10",
+        nine: "9",
+        "9": "9",
+        eight: "8",
+        "8": "8",
+        seven: "7",
+        "7": "7",
+      };
+      const suitFileMap = {
+        spades: "spades",
+        spade: "spades",
+        diamonds: "diamonds",
+        diamond: "diamonds",
+        clubs: "clubs",
+        club: "clubs",
+        hearts: "hearts",
+        heart: "hearts",
+      };
+      const rank = rankFileMap[rankKey];
+      const suit = suitFileMap[suitKey];
+      if (!rank || !suit) return null;
+      return `${rank}_of_${suit}.png`;
+    }
+
+    function cardImageHtml(name) {
+      const filename = cardAssetName(name);
+      if (!filename) {
+        return `<span class="card-text-fallback">${cardPretty(name)}</span>`;
+      }
+      return `<img class="card-img" loading="lazy" src="/assets/cards/${encodeURIComponent(filename)}" alt="${esc(String(name))}" />`;
+    }
+
+    function formatDuration(totalSec) {
+      const sec = Math.max(0, Number(totalSec || 0));
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      if (h > 0) return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+      return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    }
+
+    function formatDateTime(epochSec) {
+      const d = new Date(Number(epochSec || 0) * 1000);
+      const date = d.toLocaleDateString("en-US", {
+        month: "2-digit",
+        day: "2-digit",
+        year: "numeric"
+      });
+      const time = d.toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true
+      });
+      return { date, time };
+    }
+
+    function nameByPlayerId(playerId) {
+      const user = state.users.find(u => u.player_id === playerId);
+      return user?.player_name || playerId;
+    }
+
+    function normalizeContract(contract) {
+      const text = String(contract ?? "").trim();
+      return (text === "" || text === "-") ? "Pass" : text;
+    }
+
+    function bidHtml(text) {
+      const normalized = normalizeContract(text);
+      const safe = esc(normalized);
+      return safe
+        .replaceAll("♥", `<span class="suit-red">♥</span>`)
+        .replaceAll("♦", `<span class="suit-red">♦</span>`);
+    }
+
+    async function api(path) {
+      const res = await fetch(path);
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${path}`);
+      return await res.json();
+    }
+
+    function saveViewState() {
+      try {
+        localStorage.setItem(VIEW_STATE_KEY, JSON.stringify({
+          selectedUserId: state.selectedUserId,
+          selectedGameId: state.selectedGameId,
+          scoreSortKey: state.scoreSortKey,
+          scoreSortDir: state.scoreSortDir,
+        }));
+      } catch (_) {}
+    }
+
+    function loadViewState() {
+      try {
+        const raw = localStorage.getItem(VIEW_STATE_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        state.selectedUserId = parsed?.selectedUserId ?? null;
+        state.selectedGameId = Number.isInteger(parsed?.selectedGameId) ? parsed.selectedGameId : null;
+        state.scoreSortKey = parsed?.scoreSortKey || "game";
+        state.scoreSortDir = (parsed?.scoreSortDir === "asc" || parsed?.scoreSortDir === "desc") ? parsed.scoreSortDir : "desc";
+      } catch (_) {}
+    }
+
+    function syncSelectedGameDisplayId() {
+      if (state.selectedGameId === null) {
+        state.selectedGameDisplayId = null;
+        return;
+      }
+      const row = buildScoreRows(state.games).find(r => r.id === state.selectedGameId);
+      state.selectedGameDisplayId = row ? row.displayId : null;
+    }
+
+    function resetHandStats() {
+      state.handStats = null;
+      state.handStatsCacheKey = "";
+      state.handStatsLoading = false;
+      state.handStatsError = "";
+      state.handMatches = { hands: [], akq: [], akqj: [], aces3: [], declarer: [], pass: [], whist: [] };
+    }
+
+    function hasSuitedRanksInHand(cards, requiredRanks) {
+      const bySuit = { "♠": [], "♦": [], "♣": [], "♥": [] };
+      for (const c of (Array.isArray(cards) ? cards : [])) {
+        const n = normalizeCard(c);
+        if (bySuit[n.suit]) bySuit[n.suit].push(n.rank);
+      }
+      return Object.values(bySuit).some(ranks => requiredRanks.every(r => ranks.includes(r)));
+    }
+
+    function collectAkqMatchesForPlayer(playerId, gameDetailsList) {
+      const gameMetaById = new Map(state.games.map(g => [Number(g.id), g]));
+      const gameRowsById = new Map(buildScoreRows(state.games).map(r => [Number(r.id), r]));
+      const decisionPlayerName = nameByPlayerId(playerId);
+      const matches = [];
+      for (const game of gameDetailsList) {
+        const gameId = Number(game?.id || 0);
+        const gameMeta = gameMetaById.get(gameId);
+        const gameRow = gameRowsById.get(gameId);
+        const dt = formatDateTime(gameMeta?.timestamp || 0);
+        const deals = Array.isArray(game?.deals) ? game.deals : [];
+        for (const deal of deals) {
+          const cards = deal?.hands?.[playerId];
+          if (!Array.isArray(cards) || cards.length === 0) continue;
+          if (!hasSuitedRanksInHand(cards, ["A", "K", "Q"])) continue;
+          const rawDecision = deal?.decisions?.[playerId] ?? (deal?.declarer_id === playerId ? deal?.contract : "");
+          matches.push({
+            gameId,
+            gameDisplayId: Number(gameRow?.displayId || gameId),
+            dealId: Number(deal?.id || 0),
+            date: dt.date,
+            time: dt.time,
+            contract: deal?.contract || "",
+            declarerId: String(deal?.declarer_id || ""),
+            declarerName: deal?.declarer_name || deal?.declarer_id || "-",
+            decision: normalizeContract(rawDecision),
+            decisionPlayerName,
+            tricks: Number(deal?.tricks?.[playerId] || 0),
+            dpw: `${Number(deal?.scores?.[playerId]?.dump || 0)}/${Number(deal?.scores?.[playerId]?.pool || 0)}/${Number(deal?.scores?.[playerId]?.whists || 0)}`,
+            mmr: Number(deal?.scores?.[playerId]?.mmr || 0),
+            cards,
+            talon: Array.isArray(deal?.talon) ? deal.talon : []
+          });
+        }
+      }
+      return matches.sort((a, b) => {
+        if (b.gameId !== a.gameId) return b.gameId - a.gameId;
+        return b.dealId - a.dealId;
+      });
+    }
+
+    function collectMatchesForPlayer(playerId, gameDetailsList, matchFn) {
+      const gameMetaById = new Map(state.games.map(g => [Number(g.id), g]));
+      const gameRowsById = new Map(buildScoreRows(state.games).map(r => [Number(r.id), r]));
+      const decisionPlayerName = nameByPlayerId(playerId);
+      const matches = [];
+      for (const game of gameDetailsList) {
+        const gameId = Number(game?.id || 0);
+        const gameMeta = gameMetaById.get(gameId);
+        const gameRow = gameRowsById.get(gameId);
+        const dt = formatDateTime(gameMeta?.timestamp || 0);
+        const deals = Array.isArray(game?.deals) ? game.deals : [];
+        for (const deal of deals) {
+          const cards = deal?.hands?.[playerId];
+          if (!Array.isArray(cards) || cards.length === 0) continue;
+          if (!matchFn(cards, deal, playerId)) continue;
+          const rawDecision = deal?.decisions?.[playerId] ?? (deal?.declarer_id === playerId ? deal?.contract : "");
+          const decisionText = String(rawDecision ?? "").trim();
+          const decisionKey = decisionText.toLowerCase();
+          matches.push({
+            gameId,
+            gameDisplayId: Number(gameRow?.displayId || gameId),
+            dealId: Number(deal?.id || 0),
+            date: dt.date,
+            time: dt.time,
+            contract: deal?.contract || "",
+            declarerId: String(deal?.declarer_id || ""),
+            declarerName: deal?.declarer_name || deal?.declarer_id || "-",
+            decision: normalizeContract(rawDecision),
+            decisionPlayerName,
+            decisionText,
+            decisionKey,
+            tricks: Number(deal?.tricks?.[playerId] || 0),
+            dpw: `${Number(deal?.scores?.[playerId]?.dump || 0)}/${Number(deal?.scores?.[playerId]?.pool || 0)}/${Number(deal?.scores?.[playerId]?.whists || 0)}`,
+            mmr: Number(deal?.scores?.[playerId]?.mmr || 0),
+            cards,
+            talon: Array.isArray(deal?.talon) ? deal.talon : []
+          });
+        }
+      }
+      return matches.sort((a, b) => {
+        if (b.gameId !== a.gameId) return b.gameId - a.gameId;
+        return b.dealId - a.dealId;
+      });
+    }
+
+    async function loadSelectedGameDetails() {
+      if (state.selectedGameId === null) {
+        state.gameDetails = null;
+        state.gameDetailsMessage = "";
+        return;
+      }
+      try {
+        state.gameDetails = await api(`api/games/${state.selectedGameId}`);
+        if (!Array.isArray(state.gameDetails?.deals) || state.gameDetails.deals.length === 0) {
+          state.gameDetailsMessage = `No deal data for game ${state.selectedGameDisplayId ?? state.selectedGameId}.`;
+        } else {
+          state.gameDetailsMessage = "";
+        }
+      } catch (_) {
+        state.gameDetails = null;
+        state.gameDetailsMessage = `No deal data for game ${state.selectedGameDisplayId ?? state.selectedGameId}.`;
+      }
+    }
+
+    function percentText(value, total) {
+      if (!total) return "0.0%";
+      return `${((value * 100) / total).toFixed(1)}%`;
+    }
+
+    function computeHandStatsForPlayer(playerId, gameDetailsList) {
+      const suitOrder = ["♠", "♦", "♣", "♥"];
+      let handsCount = 0;
+      let hcpTotal = 0;
+      let cardPointsTotal = 0;
+      let suitedAKQ = 0;
+      let suitedAKQJ = 0;
+      let threePlusAces = 0;
+      let declarerCount = 0;
+      let declarerMadeCount = 0;
+      let declarerTalonHcpTotal = 0;
+      let decisionSamples = 0;
+      let passCount = 0;
+      let passMadeCount = 0;
+      let whistLikeCount = 0;
+      let whistMadeCount = 0;
+
+      const hcpByRank = { A: 4, K: 3, Q: 2, J: 1 };
+      const cardPointsByRank = { A: 8, K: 7, Q: 6, J: 5, "10": 4, "9": 3, "8": 2, "7": 1 };
+      for (const game of gameDetailsList) {
+        const deals = Array.isArray(game?.deals) ? game.deals : [];
+        for (const deal of deals) {
+          const cards = deal?.hands?.[playerId];
+          if (!Array.isArray(cards) || cards.length === 0) continue;
+          handsCount += 1;
+          if (deal?.declarer_id === playerId) {
+            declarerCount += 1;
+            const declarerDealMmr = Number(deal?.scores?.[playerId]?.mmr || 0);
+            if (declarerDealMmr > 0) declarerMadeCount += 1;
+            const talon = Array.isArray(deal?.talon) ? deal.talon : [];
+            let talonHcp = 0;
+            for (const tc of talon) {
+              const rank = normalizeCard(tc).rank;
+              talonHcp += Number(hcpByRank[rank] || 0);
+            }
+            declarerTalonHcpTotal += talonHcp;
+          }
+          const rawDecision = deal?.decisions?.[playerId] ?? (deal?.declarer_id === playerId ? deal?.contract : "");
+          const decisionText = String(rawDecision ?? "").trim();
+          if (decisionText !== "") {
+            decisionSamples += 1;
+            const decisionKey = decisionText.toLowerCase();
+            if (decisionText === "-" || decisionKey === "pass") {
+              passCount += 1;
+              const passDealMmr = Number(deal?.scores?.[playerId]?.mmr || 0);
+              if (passDealMmr > 0) passMadeCount += 1;
+            }
+            if (decisionKey.includes("whist")) {
+              whistLikeCount += 1;
+              const whistDealMmr = Number(deal?.scores?.[playerId]?.mmr || 0);
+              if (whistDealMmr > 0) whistMadeCount += 1;
+            }
+          }
+
+          const bySuit = { "♠": [], "♦": [], "♣": [], "♥": [] };
+          let aces = 0;
+          let hcp = 0;
+          let cardPoints = 0;
+          for (const c of cards) {
+            const n = normalizeCard(c);
+            const suit = n.suit;
+            const rank = n.rank;
+            if (bySuit[suit]) bySuit[suit].push(rank);
+            if (rank === "A") aces += 1;
+            hcp += Number(hcpByRank[rank] || 0);
+            cardPoints += Number(cardPointsByRank[rank] || 0);
+          }
+          hcpTotal += hcp;
+          cardPointsTotal += cardPoints;
+          if (aces >= 3) threePlusAces += 1;
+
+          const hasSuitRanks = (ranks, required) => required.every(r => ranks.includes(r));
+          let handHasAKQ = false;
+          let handHasAKQJ = false;
+          for (const suit of suitOrder) {
+            const ranks = bySuit[suit];
+            if (hasSuitRanks(ranks, ["A", "K", "Q"])) {
+              handHasAKQ = true;
+            }
+            if (hasSuitRanks(ranks, ["A", "K", "Q", "J"])) {
+              handHasAKQJ = true;
+            }
+          }
+          if (handHasAKQ) suitedAKQ += 1;
+          if (handHasAKQJ) suitedAKQJ += 1;
+        }
+      }
+
+      return {
+        handsCount,
+        avgHcp: handsCount ? (hcpTotal / handsCount) : 0,
+        avgCardPoints: handsCount ? (cardPointsTotal / handsCount) : 0,
+        suitedAKQRate: handsCount ? ((suitedAKQ * 100) / handsCount) : 0,
+        suitedAKQJRate: handsCount ? ((suitedAKQJ * 100) / handsCount) : 0,
+        threePlusAcesRate: handsCount ? ((threePlusAces * 100) / handsCount) : 0,
+        suitedAKQPct: percentText(suitedAKQ, handsCount),
+        suitedAKQJPct: percentText(suitedAKQJ, handsCount),
+        threePlusAcesPct: percentText(threePlusAces, handsCount),
+        declarerPct: percentText(declarerCount, handsCount),
+        declarerMadePct: percentText(declarerMadeCount, declarerCount),
+        avgDeclarerTalonHcp: declarerCount ? (declarerTalonHcpTotal / declarerCount) : 0,
+        passRatePct: percentText(passCount, decisionSamples),
+        passMadePct: percentText(passMadeCount, passCount),
+        whistRatePct: percentText(whistLikeCount, decisionSamples),
+        whistMadePct: percentText(whistMadeCount, whistLikeCount),
+      };
+    }
+
+    async function loadHandStatsIfNeeded() {
+      if (!state.selectedUserId) return;
+      const cacheKey = `${state.selectedUserId}:${state.games.length}:${state.games[0]?.id || 0}`;
+      if (state.handStatsCacheKey === cacheKey || state.handStatsLoading) return;
+      state.handStatsLoading = true;
+      state.handStatsError = "";
+      renderMain();
+      const userIdAtRequestStart = state.selectedUserId;
+      try {
+        const allGameDetails = await Promise.all(
+          state.games.map(g => api(`api/games/${g.id}`).catch(() => null))
+        );
+        if (state.selectedUserId !== userIdAtRequestStart) return;
+        const valid = allGameDetails.filter(Boolean);
+        state.handStats = computeHandStatsForPlayer(state.selectedUserId, valid);
+        state.handMatches = {
+          hands: collectMatchesForPlayer(state.selectedUserId, valid, () => true),
+          akq: collectAkqMatchesForPlayer(state.selectedUserId, valid),
+          akqj: collectMatchesForPlayer(state.selectedUserId, valid, cards => hasSuitedRanksInHand(cards, ["A", "K", "Q", "J"])),
+          aces3: collectMatchesForPlayer(state.selectedUserId, valid, cards => {
+            let aces = 0;
+            for (const c of cards) {
+              if (normalizeCard(c).rank === "A") aces += 1;
+            }
+            return aces >= 3;
+          }),
+          declarer: collectMatchesForPlayer(state.selectedUserId, valid, (_cards, deal, playerId) => deal?.declarer_id === playerId),
+          pass: collectMatchesForPlayer(state.selectedUserId, valid, (_cards, deal, playerId) => {
+            const rawDecision = deal?.decisions?.[playerId] ?? (deal?.declarer_id === playerId ? deal?.contract : "");
+            const decisionText = String(rawDecision ?? "").trim();
+            const decisionKey = decisionText.toLowerCase();
+            return decisionText === "-" || decisionKey === "pass";
+          }),
+          whist: collectMatchesForPlayer(state.selectedUserId, valid, (_cards, deal, playerId) => {
+            const rawDecision = deal?.decisions?.[playerId] ?? (deal?.declarer_id === playerId ? deal?.contract : "");
+            const decisionKey = String(rawDecision ?? "").trim().toLowerCase();
+            return decisionKey.includes("whist");
+          }),
+        };
+        state.handStatsCacheKey = cacheKey;
+      } catch (err) {
+        if (state.selectedUserId !== userIdAtRequestStart) return;
+        state.handStatsError = String(err?.message || err || "Failed to load hand stats.");
+      } finally {
+        if (state.selectedUserId === userIdAtRequestStart) {
+          state.handStatsLoading = false;
+          renderMain();
+        }
+      }
+    }
+
+    async function selectGame(gameId, gameDisplayId = null) {
+      state.activeHandFilter = "";
+      state.selectedGameId = Number(gameId);
+      state.pendingGameScrollId = Number(gameId);
+      state.selectedGameDisplayId = gameDisplayId !== null ? Number(gameDisplayId) : null;
+      if (state.selectedGameDisplayId === null) syncSelectedGameDisplayId();
+      state.gameDetails = null;
+      state.gameDetailsMessage = "";
+      saveViewState();
+      renderMain();
+      await loadSelectedGameDetails();
+      renderMain();
+    }
+
+    function renderUsers() {
+      const usersEl = document.getElementById("users");
+      usersEl.innerHTML = state.users.map(u => {
+        const mmrText = `${u.total_mmr > 0 ? "+" : ""}${u.total_mmr}`;
+        return `
+        <div class="list-item ${u.player_id === state.selectedUserId ? "active" : ""}" data-user-id="${esc(u.player_id)}">
+          <div class="name">${esc(u.player_name)}</div>
+          <div class="meta">MMR: <span class="${scoreClass(mmrText)}">${esc(mmrText)}</span> • games: ${u.games_count}</div>
+        </div>
+        `;
+      }).join("");
+      usersEl.querySelectorAll("[data-user-id]").forEach(el => {
+        el.addEventListener("click", async () => {
+          state.selectedUserId = el.dataset.userId;
+          state.selectedGameId = null;
+          state.selectedGameDisplayId = null;
+          state.gameDetails = null;
+          state.gameDetailsMessage = "";
+          resetHandStats();
+          await loadGames();
+          saveViewState();
+          render();
+          loadHandStatsIfNeeded().catch(() => {});
+        });
+      });
+    }
+
+    function dealRows(deal) {
+      const pids = Object.keys(deal.hands || {}).sort();
+      return pids.map(pid => {
+        const rawDecision = deal.decisions?.[pid] ?? (pid === deal.declarer_id ? deal.contract : "");
+        const decision = normalizeContract(rawDecision);
+        const tricks = deal.tricks?.[pid] ?? 0;
+        const score = deal.scores?.[pid] || {};
+        const dpw = `${Number(score.dump || 0)}/${Number(score.pool || 0)}/${Number(score.whists || 0)}`;
+        const mmr = Number(score.mmr || 0);
+        const mmrText = `${mmr > 0 ? "+" : ""}${mmr}`;
+        return `
+          <tr>
+            <td>${esc(nameByPlayerId(pid))}</td>
+            <td class="col-decision"><span class="pill">${bidHtml(decision)}</span></td>
+            <td>${esc(tricks)}</td>
+            <td>${esc(dpw)}</td>
+            <td class="${scoreClass(mmrText)}">${esc(mmrText)}</td>
+            <td class="cards">${cardsHtml(deal.hands[pid] || [])}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function buildScoreRows(games) {
+      const asc = [...games].sort((a, b) => a.id - b.id);
+      let run = 0;
+      const mmrDiffById = new Map();
+      for (const g of asc) {
+        run += Number(g.mmr || 0);
+        mmrDiffById.set(g.id, run);
+      }
+      const desc = [...asc].reverse();
+      return desc.map((g, idx) => {
+        const mmr = Number(g.mmr || 0);
+        const resultLabel = mmr === 0 ? "Draw" : (mmr > 0 ? "Win" : "Lost");
+        const sign = mmr > 0 ? "+" : "";
+        const result = `${resultLabel} (${sign}${mmr})`;
+        const mmrTotal = Number(mmrDiffById.get(g.id) || 0);
+        const mmrTotalText = `${mmrTotal > 0 ? "+" : ""}${mmrTotal}`;
+        const { date, time } = formatDateTime(g.timestamp);
+        return {
+          id: g.id,
+          displayId: desc.length - idx,
+          timestamp: Number(g.timestamp || 0),
+          date,
+          time,
+          durationSec: Number(g.duration || 0),
+          duration: formatDuration(g.duration),
+          mmr,
+          result,
+          mmrTotal,
+          mmrTotalText,
+          pool: Number(g.pool || 0),
+          dump: Number(g.dump || 0),
+          whists: Number(g.whists || 0),
+          dpw: `${g.dump}/${g.pool}/${g.whists}`,
+          gameType: g.game_type === "RANKED" ? "Ranked" : "Normal",
+        };
+      });
+    }
+
+    function defaultSortDirFor(key) {
+      return key === "type" ? "asc" : "desc";
+    }
+
+    function sortIndicator(key) {
+      if (state.scoreSortKey !== key) return "";
+      return state.scoreSortDir === "asc" ? " ▲" : " ▼";
+    }
+
+    function compareScoreRows(a, b, key) {
+      if (key === "game") return a.displayId - b.displayId;
+      if (key === "date" || key === "time") return a.timestamp - b.timestamp;
+      if (key === "duration") return a.durationSec - b.durationSec;
+      if (key === "result") return a.mmr - b.mmr;
+      if (key === "mmr") return a.mmrTotal - b.mmrTotal;
+      if (key === "dpw") {
+        if (a.dump !== b.dump) return a.dump - b.dump;
+        if (a.pool !== b.pool) return a.pool - b.pool;
+        return a.whists - b.whists;
+      }
+      if (key === "type") return a.gameType.localeCompare(b.gameType);
+      return 0;
+    }
+
+    function sortScoreRows(rows) {
+      const key = state.scoreSortKey;
+      const dir = state.scoreSortDir === "asc" ? 1 : -1;
+      return [...rows].sort((a, b) => {
+        const c = compareScoreRows(a, b, key);
+        if (c !== 0) return c * dir;
+        return (b.displayId - a.displayId);
+      });
+    }
+
+    function buildTotals(games) {
+      const totalGames = games.length;
+      const totalWins = games.filter(g => Number(g.mmr || 0) > 0).length;
+      const totalLosses = games.filter(g => Number(g.mmr || 0) < 0).length;
+      const denom = totalWins + totalLosses;
+      const winRate = denom > 0 ? Math.floor((totalWins / denom) * 100) : 0;
+      const totalMmr = games.reduce((acc, g) => acc + Number(g.mmr || 0), 0);
+      const totalPool = games.reduce((acc, g) => acc + Number(g.pool || 0), 0);
+      const totalDump = games.reduce((acc, g) => acc + Number(g.dump || 0), 0);
+      const totalWhists = games.reduce((acc, g) => acc + Number(g.whists || 0), 0);
+      const totalDurationSec = games.reduce((acc, g) => acc + Number(g.duration || 0), 0);
+      const avgDurationSec = totalGames > 0 ? Math.round(totalDurationSec / totalGames) : 0;
+      return {
+        totalGames,
+        winRate,
+        totalMmr,
+        totalPool,
+        totalDump,
+        totalWhists,
+        totalDurationSec,
+        avgDurationSec,
+        totalDPW: `${totalDump}/${totalPool}/${totalWhists}`,
+        totalDuration: formatDuration(totalDurationSec),
+        avgDuration: formatDuration(avgDurationSec),
+        resultText: `${winRate}% WIN RATE`,
+      };
+    }
+
+    function buildMmrTrendSvg(games) {
+      const asc = [...games].sort((a, b) => Number(a.id) - Number(b.id));
+      if (asc.length === 0) {
+        return {
+          svg: `<svg class="trend-svg" viewBox="0 0 560 96" preserveAspectRatio="none"></svg>`,
+          start: 0,
+          end: 0
+        };
+      }
+      let running = 0;
+      const cumulative = asc.map(g => {
+        running += Number(g.mmr || 0);
+        return running;
+      });
+      const width = 560;
+      const height = 96;
+      const padX = 6;
+      const padY = 8;
+      const minV = Math.min(...cumulative);
+      const maxV = Math.max(...cumulative);
+      const span = Math.max(1, maxV - minV);
+      const innerW = Math.max(1, width - padX * 2);
+      const innerH = Math.max(1, height - padY * 2);
+      const stepX = cumulative.length > 1 ? innerW / (cumulative.length - 1) : 0;
+      const points = cumulative.map((v, i) => {
+        const x = padX + i * stepX;
+        const y = padY + (1 - ((v - minV) / span)) * innerH;
+        return `${x.toFixed(2)},${y.toFixed(2)}`;
+      }).join(" ");
+      const zeroY = padY + (1 - ((0 - minV) / span)) * innerH;
+      const zeroVisible = zeroY >= padY && zeroY <= (height - padY);
+      const endValue = cumulative[cumulative.length - 1];
+      const stroke = endValue >= 0 ? "var(--green)" : "var(--red)";
+      return {
+        svg: `
+          <svg class="trend-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+            ${zeroVisible ? `<line x1="${padX}" y1="${zeroY.toFixed(2)}" x2="${width - padX}" y2="${zeroY.toFixed(2)}" stroke="#6272a4" stroke-width="1" stroke-dasharray="4 3"></line>` : ""}
+            <polyline points="${points}" fill="none" stroke="${stroke}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"></polyline>
+          </svg>
+        `,
+        start: 0,
+        end: endValue
+      };
+    }
+
+    function scoreClass(cell) {
+      const text = String(cell ?? "").trim();
+      const goodWinrate = 51;
+      const badWinrate = 39;
+      if (!text) return "";
+      if (/^[+-]?\d+$/.test(text)) {
+        const value = Number(text);
+        if (value > 0) return "score-good";
+        if (value < 0) return "score-bad";
+        return "score-mid";
+      }
+      if (text === "0" || text === "+0") {
+        return "score-mid";
+      }
+      if (
+        text.startsWith("+") ||
+        text.startsWith("Win") ||
+        (text.includes("%") && Number.parseInt(text, 10) >= goodWinrate)
+      ) {
+        return "score-good";
+      }
+      if (
+        (text.startsWith("-") && text !== "-") ||
+        text.startsWith("Lost") ||
+        (text.includes("%") && Number.parseInt(text, 10) <= badWinrate)
+      ) {
+        return "score-bad";
+      }
+      if (
+        text === "0" ||
+        text.startsWith("Draw") ||
+        (text.includes("%") &&
+          Number.parseInt(text, 10) < goodWinrate &&
+          Number.parseInt(text, 10) > badWinrate)
+      ) {
+        return "score-mid";
+      }
+      return "";
+    }
+
+    function moveStatTooltip(e) {
+      if (!statTooltipEl || statTooltipEl.style.display !== "block") return;
+      const pad = 12;
+      const w = statTooltipEl.offsetWidth || 260;
+      const h = statTooltipEl.offsetHeight || 80;
+      let left = e.clientX + pad;
+      let top = e.clientY + pad;
+      if (left + w > window.innerWidth - 8) left = e.clientX - w - pad;
+      if (left < 8) left = 8;
+      if (top + h > window.innerHeight - 8) top = e.clientY - h - pad;
+      if (top < 8) top = 8;
+      statTooltipEl.style.left = `${left}px`;
+      statTooltipEl.style.top = `${top}px`;
+    }
+
+    function showStatTooltip(text, e) {
+      if (!statTooltipEl || !text) return;
+      statTooltipEl.textContent = text;
+      statTooltipEl.style.display = "block";
+      moveStatTooltip(e);
+    }
+
+    function hideStatTooltip() {
+      if (!statTooltipEl) return;
+      statTooltipEl.style.display = "none";
+    }
+
+    function formatSignedDelta(value) {
+      const v = Number(value || 0);
+      if (Math.abs(v) < 0.005) return "0.00";
+      return `${v > 0 ? "+" : ""}${v.toFixed(2)}`;
+    }
+
+    function formatSignedPpDelta(value) {
+      const v = Number(value || 0);
+      if (Math.abs(v) < 0.005) return "0.00";
+      return `${v > 0 ? "+" : ""}${v.toFixed(2)}`;
+    }
+
+    function renderMain() {
+      const content = document.getElementById("content");
+      const mainEl = document.querySelector("main.main");
+      const prevMainScrollTop = mainEl ? mainEl.scrollTop : 0;
+      const prevGamesScrollTop = content.querySelector(".games-table-wrap")?.scrollTop ?? 0;
+      const prevFilteredScrollTop = content.querySelector(".filtered-table-wrap")?.scrollTop ?? 0;
+      if (!state.selectedUserId) {
+        content.innerHTML = `<div class="empty">Select a user to view games and deals.</div>`;
+        return;
+      }
+      const user = state.users.find(u => u.player_id === state.selectedUserId);
+      if (!user) {
+        content.innerHTML = `<div class="empty">Selected user is not available.</div>`;
+        return;
+      }
+
+      const rows = sortScoreRows(buildScoreRows(state.games));
+      const totals = buildTotals(state.games);
+      const trend = buildMmrTrendSvg(state.games);
+      const handStatsCacheKey = `${state.selectedUserId}:${state.games.length}:${state.games[0]?.id || 0}`;
+      if (!state.handStatsLoading && state.games.length > 0 && state.handStatsCacheKey !== handStatsCacheKey) {
+        loadHandStatsIfNeeded().catch(() => {});
+      }
+
+      const gamesTable = `
+        <div class="games-block">
+          <h2 class="clearable" data-action="clear-main-selection" title="Clear selected game and stat filters">${esc(user.player_name)}</h2>
+          <div class="summary-cards">
+            <div class="summary-card" data-tip="Total number of games.">
+              <div class="summary-label">Games</div>
+              <div class="summary-value">${totals.totalGames}</div>
+            </div>
+            <div class="summary-card" data-tip="Net MMR change.">
+              <div class="summary-label">MMR</div>
+              <div class="summary-value ${scoreClass(String(totals.totalMmr))}">${totals.totalMmr > 0 ? "+" : ""}${totals.totalMmr}</div>
+            </div>
+            <div class="summary-card" data-tip="Percentage of games with a positive MMR change.">
+              <div class="summary-label">Win Rate</div>
+              <div class="summary-value ${scoreClass(totals.resultText)}">${totals.winRate}%</div>
+            </div>
+            <div class="summary-card" data-tip="Total dump/pool/whist across all games.">
+              <div class="summary-label">D/P/W</div>
+              <div class="summary-value">${esc(totals.totalDPW)}</div>
+            </div>
+            <div class="summary-card" data-tip="Average duration per game.">
+              <div class="summary-label">Avg Duration</div>
+              <div class="summary-value">${esc(totals.avgDuration)}</div>
+            </div>
+            <div class="summary-card" data-tip="Combined duration of all games.">
+              <div class="summary-label">Total Duration</div>
+              <div class="summary-value">${esc(totals.totalDuration)}</div>
+            </div>
+          </div>
+          <div class="hand-stats">
+            ${state.handStatsLoading
+              ? `<div class="empty">Calculating hand stats...</div>`
+              : (state.handStatsError
+                ? `<div class="empty">${esc(state.handStatsError)}</div>`
+                : (!state.handStats || state.handStats.handsCount === 0
+                  ? `<div class="empty">No hands found for this user.</div>`
+                  : `
+                    <div class="hand-stats-grid">
+                      <div class="hand-stat-card ${state.activeHandFilter === "hands" ? "is-active" : ""}" data-action="filter-hands" data-tip="Total number of deals."><div class="hand-stat-label">Deals</div><div class="hand-stat-value">${state.handStats.handsCount}</div></div>
+                      <div class="hand-stat-card ${state.activeHandFilter === "declarer" ? "is-active" : ""}" data-action="filter-declarer" data-tip="Percentage of deals played as declarer.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Declarer Rate</div><div class="hand-stat-value">${state.handStats.declarerPct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.declarerMadePct)}">${state.handStats.declarerMadePct}</span></span></div></div>
+                      <div class="hand-stat-card ${state.activeHandFilter === "pass" ? "is-active" : ""}" data-action="filter-pass" data-tip="Percentage of deals passed.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Pass Rate</div><div class="hand-stat-value">${state.handStats.passRatePct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.passMadePct)}">${state.handStats.passMadePct}</span></span></div></div>
+                      <div class="hand-stat-card ${state.activeHandFilter === "whist" ? "is-active" : ""}" data-action="filter-whist" data-tip="Percentage of deals played as whist/half-whist.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Whist Rate</div><div class="hand-stat-value">${state.handStats.whistRatePct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.whistMadePct)}">${state.handStats.whistMadePct}</span></span></div></div>
+                      <div class="hand-stat-card ${state.activeHandFilter === "akq" ? "is-active" : ""}" data-action="filter-akq" data-tip="Percentage of hands with at least one suited AKQ combination (e.g., A♠ K♠ Q♠).&#10;In a uniformly random deal, the expected value is 9.54%."><div class="hand-stat-label">AKQ Suited</div><div class="hand-stat-value">${state.handStats.suitedAKQPct}<span class="hand-stat-delta ${scoreClass(formatSignedPpDelta(state.handStats.suitedAKQRate - 9.5385))}">${formatSignedPpDelta(state.handStats.suitedAKQRate - 9.5385)}</span></div></div>
+                      <div class="hand-stat-card ${state.activeHandFilter === "akqj" ? "is-active" : ""}" data-action="filter-akqj" data-tip="Percentage of hands with at least one suited AKQJ combination (e.g., A♠ K♠ Q♠ J♠).&#10;In a uniformly random deal, the expected value is 2.33%."><div class="hand-stat-label">AKQJ Suited</div><div class="hand-stat-value">${state.handStats.suitedAKQJPct}<span class="hand-stat-delta ${scoreClass(formatSignedPpDelta(state.handStats.suitedAKQJRate - 2.3334))}">${formatSignedPpDelta(state.handStats.suitedAKQJRate - 2.3334)}</span></div></div>
+                      <div class="hand-stat-card ${state.activeHandFilter === "aces3" ? "is-active" : ""}" data-action="filter-aces3" data-tip="Percentage of hands with three or more aces (e.g., A♠ A♦ A♣).&#10;In a uniformly random deal, the expected value is 7.93%."><div class="hand-stat-label">3+ Aces</div><div class="hand-stat-value">${state.handStats.threePlusAcesPct}<span class="hand-stat-delta ${scoreClass(formatSignedPpDelta(state.handStats.threePlusAcesRate - 7.9255))}">${formatSignedPpDelta(state.handStats.threePlusAcesRate - 7.9255)}</span></div></div>
+                      <div class="hand-stat-card" data-tip="Average Card Points&#10;(7=1, 8=2, 9=3, 10=4, J=5, Q=6, K=7, A=8).&#10;In a uniformly random deal, the expected value is 45."><div class="hand-stat-label">Avg CP</div><div class="hand-stat-value">${state.handStats.avgCardPoints.toFixed(2)}<span class="hand-stat-delta ${scoreClass(formatSignedDelta(state.handStats.avgCardPoints - 45))}">${formatSignedDelta(state.handStats.avgCardPoints - 45)}</span></div></div>
+                      <div class="hand-stat-card" data-tip="Average High Card Points&#10;(7-10=0, J=1, Q=2, K=3, A=4).&#10;In a uniformly random deal, the expected value is 12.5."><div class="hand-stat-label">Avg HCP</div><div class="hand-stat-value">${state.handStats.avgHcp.toFixed(2)}<span class="hand-stat-delta ${scoreClass(formatSignedDelta(state.handStats.avgHcp - 12.5))}">${formatSignedDelta(state.handStats.avgHcp - 12.5)}</span></div></div>
+                      <div class="hand-stat-card" data-tip="Average Talon High Card Points&#10;(7-10=0, J=1, Q=2, K=3, A=4).&#10;In a uniformly random deal, the expected value is 2.5."><div class="hand-stat-label">Avg Talon HCP</div><div class="hand-stat-value">${state.handStats.avgDeclarerTalonHcp.toFixed(2)}<span class="hand-stat-delta ${scoreClass(formatSignedDelta(state.handStats.avgDeclarerTalonHcp - 2.5))}">${formatSignedDelta(state.handStats.avgDeclarerTalonHcp - 2.5)}</span></div></div>
+                    </div>
+                  `))}
+          </div>
+          ${state.activeHandFilter ? `
+          <div class="section">
+            <h2>${state.activeHandFilter === "hands" ? "Deals" : (state.activeHandFilter === "akq" ? "AKQ Suited Deals" : (state.activeHandFilter === "akqj" ? "AKQJ Suited Deals" : (state.activeHandFilter === "aces3" ? "3+ Aces Deals" : (state.activeHandFilter === "declarer" ? "Declarer Deals" : (state.activeHandFilter === "pass" ? "Pass Deals" : "Whist Deals")))))} • ${state.handMatches[state.activeHandFilter]?.length || 0}</h2>
+            ${(state.handMatches[state.activeHandFilter]?.length || 0) === 0 ? `<div class="empty">No matching deals found.</div>` : `
+              <div class="filtered-table-wrap">
+                <table class="filtered-deals-table">
+                  <colgroup>
+                    <col style="width:6%">
+                    <col style="width:6%">
+                    <col style="width:12%">
+                    <col style="width:14%">
+                    <col style="width:7%">
+                    <col style="width:10%">
+                    <col style="width:7%">
+                    <col style="width:8%">
+                    <col style="width:30%">
+                  </colgroup>
+                  <thead>
+                    <tr><th>GAME</th><th>DEAL</th><th>CONTRACT</th><th>DECISION</th><th>TRICKS</th><th>D/P/W</th><th>MMR</th><th>TALON</th><th>HANDS</th></tr>
+                  </thead>
+                  <tbody>
+                    ${(state.handMatches[state.activeHandFilter] || []).map(m => `
+                      <tr>
+                        <td>${m.gameDisplayId}</td>
+                        <td>${m.dealId}</td>
+                        <td><span class="pill">${bidHtml(m.contract)}</span>${String(m.declarerId || "") === String(state.selectedUserId || "") ? "" : ` ${esc(m.declarerName || "-")}`}</td>
+                        <td><span class="pill">${bidHtml(m.decision)}</span></td>
+                        <td>${esc(m.tricks)}</td>
+                        <td>${esc(m.dpw)}</td>
+                        <td class="${scoreClass(String(m.mmr))}">${m.mmr > 0 ? "+" : ""}${m.mmr}</td>
+                        <td class="cards">${cardsHtml(m.talon || [])}</td>
+                        <td class="cards">${cardsHtml(m.cards || [])}</td>
+                      </tr>
+                    `).join("")}
+                  </tbody>
+                </table>
+              </div>
+            `}
+          </div>
+          ` : ""}
+          <div class="trend-panel" data-tip="MMR trend.">
+            ${trend.svg}
+          </div>
+          <div class="games-table-wrap ${state.selectedGameId !== null ? "limited" : ""}">
+            <table>
+              <thead class="score-header">
+                <tr>
+                  <th class="col-game sortable ${state.scoreSortKey === "game" ? "active" : ""}" data-sort-key="game">GAME${sortIndicator("game")}</th>
+                  <th class="sortable ${state.scoreSortKey === "date" ? "active" : ""}" data-sort-key="date">DATE${sortIndicator("date")}</th>
+                  <th class="sortable ${state.scoreSortKey === "time" ? "active" : ""}" data-sort-key="time">TIME${sortIndicator("time")}</th>
+                  <th class="sortable ${state.scoreSortKey === "duration" ? "active" : ""}" data-sort-key="duration">DURATION${sortIndicator("duration")}</th>
+                  <th class="sortable ${state.scoreSortKey === "result" ? "active" : ""}" data-sort-key="result">RESULT${sortIndicator("result")}</th>
+                  <th class="sortable ${state.scoreSortKey === "mmr" ? "active" : ""}" data-sort-key="mmr">MMR${sortIndicator("mmr")}</th>
+                  <th class="sortable ${state.scoreSortKey === "dpw" ? "active" : ""}" data-sort-key="dpw">D/P/W${sortIndicator("dpw")}</th>
+                  <th class="sortable ${state.scoreSortKey === "type" ? "active" : ""}" data-sort-key="type">TYPE${sortIndicator("type")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map(r => `
+                  <tr class="game-row ${Number(r.id) === state.selectedGameId ? "selected" : ""}" data-game-id="${r.id}" data-game-display-id="${r.displayId}">
+                    <td class="col-game">${r.displayId}</td>
+                    <td>${esc(r.date)}</td>
+                    <td>${esc(r.time)}</td>
+                    <td>${esc(r.duration)}</td>
+                    <td class="${scoreClass(r.result)}">${esc(r.result)}</td>
+                    <td class="${scoreClass(r.mmrTotalText)}">${esc(r.mmrTotalText)}</td>
+                    <td>${esc(r.dpw)}</td>
+                    <td>${esc(r.gameType)}</td>
+                  </tr>
+                `).join("") || `<tr><td colspan="8" class="empty">No games</td></tr>`}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+
+      let dealsSection = ``;
+      if (state.selectedGameId !== null) {
+        if (state.gameDetailsMessage) {
+          dealsSection = `<div class="section"><div class="empty">${esc(state.gameDetailsMessage)}</div></div>`;
+        } else if (state.gameDetails && Array.isArray(state.gameDetails.deals) && state.gameDetails.deals.length > 0) {
+          dealsSection = `
+        <div class="section">
+          <h2>Game ${state.selectedGameDisplayId ?? state.gameDetails.id} • Deals: ${state.gameDetails.deals.length}</h2>
+          ${[...state.gameDetails.deals].sort((a, b) => Number(b.id) - Number(a.id)).map(deal => `
+            <div class="deal">
+              <div class="deal-head">Deal ${deal.id} • Declarer: ${esc(deal.declarer_name || deal.declarer_id || "-")} • Contract: ${bidHtml(deal.contract)}</div>
+              <table class="deals-table">
+                <colgroup>
+                  <col style="width:14.2857%">
+                  <col style="width:14.2857%">
+                  <col style="width:14.2857%">
+                  <col style="width:14.2857%">
+                  <col style="width:14.2857%">
+                  <col style="width:28.5714%">
+                </colgroup>
+                <thead>
+                  <tr><th>NAME</th><th class="col-decision">DECISION</th><th>TRICKS</th><th>D/P/W</th><th>MMR</th><th>CARDS</th></tr>
+                </thead>
+                <tbody>
+                  ${dealRows(deal)}
+                  <tr>
+                    <td>Talon</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td class="cards">${cardsHtml(deal.talon || [])}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          `).join("")}
+        </div>
+      `;
+        } else {
+          dealsSection = `<div class="section"><div class="empty">No deal data for game ${esc(state.selectedGameDisplayId ?? state.selectedGameId)}.</div></div>`;
+        }
+      }
+
+      content.innerHTML = gamesTable + dealsSection;
+      syncGamesTableViewport(content);
+      syncFilteredTableViewport(content);
+      const gamesWrap = content.querySelector(".games-table-wrap");
+      if (gamesWrap) gamesWrap.scrollTop = prevGamesScrollTop;
+      const filteredWrap = content.querySelector(".filtered-table-wrap");
+      if (filteredWrap) filteredWrap.scrollTop = prevFilteredScrollTop;
+      if (mainEl) mainEl.scrollTop = prevMainScrollTop;
+      syncSelectedGameIntoView(content);
+      content.querySelectorAll("[data-tip]").forEach(el => {
+        el.addEventListener("mouseenter", e => showStatTooltip(el.dataset.tip || "", e));
+        el.addEventListener("mousemove", moveStatTooltip);
+        el.addEventListener("mouseleave", hideStatTooltip);
+      });
+      content.querySelectorAll("[data-action='filter-akq']").forEach(el => {
+        el.addEventListener("click", () => {
+          state.activeHandFilter = state.activeHandFilter === "akq" ? "" : "akq";
+          state.selectedGameId = null;
+          state.selectedGameDisplayId = null;
+          state.gameDetails = null;
+          state.gameDetailsMessage = "";
+          saveViewState();
+          renderMain();
+        });
+      });
+      content.querySelectorAll("[data-action='filter-hands']").forEach(el => {
+        el.addEventListener("click", () => {
+          state.activeHandFilter = state.activeHandFilter === "hands" ? "" : "hands";
+          state.selectedGameId = null;
+          state.selectedGameDisplayId = null;
+          state.gameDetails = null;
+          state.gameDetailsMessage = "";
+          saveViewState();
+          renderMain();
+        });
+      });
+      content.querySelectorAll("[data-action='filter-akqj']").forEach(el => {
+        el.addEventListener("click", () => {
+          state.activeHandFilter = state.activeHandFilter === "akqj" ? "" : "akqj";
+          state.selectedGameId = null;
+          state.selectedGameDisplayId = null;
+          state.gameDetails = null;
+          state.gameDetailsMessage = "";
+          saveViewState();
+          renderMain();
+        });
+      });
+      content.querySelectorAll("[data-action='filter-aces3']").forEach(el => {
+        el.addEventListener("click", () => {
+          state.activeHandFilter = state.activeHandFilter === "aces3" ? "" : "aces3";
+          state.selectedGameId = null;
+          state.selectedGameDisplayId = null;
+          state.gameDetails = null;
+          state.gameDetailsMessage = "";
+          saveViewState();
+          renderMain();
+        });
+      });
+      content.querySelectorAll("[data-action='filter-declarer']").forEach(el => {
+        el.addEventListener("click", () => {
+          state.activeHandFilter = state.activeHandFilter === "declarer" ? "" : "declarer";
+          state.selectedGameId = null;
+          state.selectedGameDisplayId = null;
+          state.gameDetails = null;
+          state.gameDetailsMessage = "";
+          saveViewState();
+          renderMain();
+        });
+      });
+      content.querySelectorAll("[data-action='filter-pass']").forEach(el => {
+        el.addEventListener("click", () => {
+          state.activeHandFilter = state.activeHandFilter === "pass" ? "" : "pass";
+          state.selectedGameId = null;
+          state.selectedGameDisplayId = null;
+          state.gameDetails = null;
+          state.gameDetailsMessage = "";
+          saveViewState();
+          renderMain();
+        });
+      });
+      content.querySelectorAll("[data-action='filter-whist']").forEach(el => {
+        el.addEventListener("click", () => {
+          state.activeHandFilter = state.activeHandFilter === "whist" ? "" : "whist";
+          state.selectedGameId = null;
+          state.selectedGameDisplayId = null;
+          state.gameDetails = null;
+          state.gameDetailsMessage = "";
+          saveViewState();
+          renderMain();
+        });
+      });
+      content.querySelectorAll("[data-sort-key]").forEach(el => {
+        el.addEventListener("click", () => {
+          const key = String(el.dataset.sortKey || "");
+          if (!key) return;
+          if (state.scoreSortKey === key) {
+            state.scoreSortDir = state.scoreSortDir === "asc" ? "desc" : "asc";
+          } else {
+            state.scoreSortKey = key;
+            state.scoreSortDir = defaultSortDirFor(key);
+          }
+          saveViewState();
+          renderMain();
+        });
+      });
+      content.querySelectorAll("[data-action='clear-main-selection']").forEach(el => {
+        el.addEventListener("click", () => {
+          state.selectedGameId = null;
+          state.selectedGameDisplayId = null;
+          state.gameDetails = null;
+          state.gameDetailsMessage = "";
+          state.activeHandFilter = "";
+          saveViewState();
+          renderMain();
+        });
+      });
+      content.querySelectorAll("tr[data-game-id]").forEach(row => {
+        row.addEventListener("click", async () => {
+          const clickedGameId = Number(row.dataset.gameId);
+          if (state.selectedGameId === clickedGameId) {
+            state.selectedGameId = null;
+            state.pendingGameScrollId = null;
+            state.selectedGameDisplayId = null;
+            state.gameDetails = null;
+            state.gameDetailsMessage = "";
+            saveViewState();
+            renderMain();
+            return;
+          }
+          await selectGame(row.dataset.gameId, row.dataset.gameDisplayId);
+        });
+      });
+    }
+
+    function syncGamesTableViewport(contentRoot) {
+      const wrap = contentRoot.querySelector(".games-table-wrap");
+      if (!wrap) return;
+      if (state.selectedGameId === null) {
+        wrap.style.maxHeight = "none";
+        return;
+      }
+      const headerRow = wrap.querySelector("thead tr");
+      const firstDataRow = wrap.querySelector("tbody tr");
+      if (!headerRow || !firstDataRow) {
+        wrap.style.maxHeight = "none";
+        return;
+      }
+      const headerH = headerRow.getBoundingClientRect().height;
+      const rowH = firstDataRow.getBoundingClientRect().height;
+      const target = Math.ceil(headerH + rowH * 3 + 2);
+      wrap.style.maxHeight = `${target}px`;
+    }
+
+    function syncSelectedGameIntoView(contentRoot) {
+      if (state.pendingGameScrollId === null) return;
+      const wrap = contentRoot.querySelector(".games-table-wrap");
+      if (!wrap) {
+        state.pendingGameScrollId = null;
+        return;
+      }
+      const row = wrap.querySelector(`tr[data-game-id="${state.pendingGameScrollId}"]`);
+      if (!row) {
+        state.pendingGameScrollId = null;
+        return;
+      }
+      const rowTop = row.offsetTop;
+      const rowBottom = rowTop + row.offsetHeight;
+      const viewTop = wrap.scrollTop;
+      const viewBottom = viewTop + wrap.clientHeight;
+      if (rowTop < viewTop) {
+        wrap.scrollTop = rowTop;
+      } else if (rowBottom > viewBottom) {
+        wrap.scrollTop = rowBottom - wrap.clientHeight;
+      }
+      state.pendingGameScrollId = null;
+    }
+
+    function syncFilteredTableViewport(contentRoot) {
+      const wrap = contentRoot.querySelector(".filtered-table-wrap");
+      if (!wrap) return;
+      const headerRow = wrap.querySelector("thead tr");
+      const firstDataRow = wrap.querySelector("tbody tr");
+      if (!headerRow || !firstDataRow) {
+        wrap.style.maxHeight = "none";
+        return;
+      }
+      const headerH = headerRow.getBoundingClientRect().height;
+      const rowH = firstDataRow.getBoundingClientRect().height;
+      const target = Math.ceil(headerH + rowH * 6 + 2);
+      wrap.style.maxHeight = `${target}px`;
+    }
+
+    function render() {
+      renderUsers();
+      renderMain();
+    }
+
+    async function loadUsers() {
+      state.users = await api("api/users");
+    }
+
+    async function loadGames() {
+      state.games = await api(`api/users/${encodeURIComponent(state.selectedUserId)}/games`);
+    }
+
+    async function refreshData() {
+      if (refreshInFlight) return;
+      refreshInFlight = true;
+      try {
+        await loadUsers();
+        if (state.selectedUserId && !state.users.some(u => u.player_id === state.selectedUserId)) {
+          state.selectedUserId = null;
+          state.selectedGameId = null;
+          state.selectedGameDisplayId = null;
+          state.gameDetails = null;
+          state.gameDetailsMessage = "";
+          saveViewState();
+          render();
+          return;
+        }
+        if (state.selectedUserId) {
+          await loadGames();
+          syncSelectedGameDisplayId();
+          if (state.selectedGameId && !state.games.some(g => Number(g.id) === state.selectedGameId)) {
+            state.selectedGameId = null;
+            state.selectedGameDisplayId = null;
+            state.gameDetails = null;
+            state.gameDetailsMessage = "";
+            saveViewState();
+            render();
+            return;
+          }
+          if (state.selectedGameId !== null) {
+            await loadSelectedGameDetails();
+          }
+        }
+        render();
+      } finally {
+        refreshInFlight = false;
+      }
+    }
+
+    function startAutoRefresh() {
+      if (refreshTimer !== null) clearInterval(refreshTimer);
+      refreshTimer = setInterval(() => {
+        refreshData().catch(() => {});
+      }, 5000);
+    }
+
+    async function boot() {
+      try {
+        const appTitle = document.getElementById("app-title");
+        if (appTitle) {
+          appTitle.addEventListener("click", () => {
+            state.selectedUserId = null;
+            state.selectedGameId = null;
+            state.selectedGameDisplayId = null;
+            state.gameDetails = null;
+            state.gameDetailsMessage = "";
+            saveViewState();
+            render();
+          });
+        }
+        loadViewState();
+        await loadUsers();
+        if (state.selectedUserId && state.users.some(u => u.player_id === state.selectedUserId)) {
+          await loadGames();
+          syncSelectedGameDisplayId();
+          if (state.selectedGameId !== null && state.games.some(g => Number(g.id) === state.selectedGameId)) {
+            await loadSelectedGameDetails();
+          } else {
+            state.selectedGameId = null;
+            state.selectedGameDisplayId = null;
+          }
+        } else {
+          state.selectedUserId = null;
+          state.selectedGameId = null;
+          state.selectedGameDisplayId = null;
+        }
+        saveViewState();
+        render();
+        startAutoRefresh();
+      } catch (err) {
+        document.getElementById("content").innerHTML =
+          `<div class="empty">Failed to load data: ${esc(err?.message || err)}</div>`;
+      }
+    }
+
+    boot();
+  </script>
+</body>
+</html>

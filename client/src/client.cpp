@@ -136,6 +136,24 @@ struct Card {
     {
         image.Resize(static_cast<int>(CardWidth), static_cast<int>(CardHeight));
         texture = image.LoadTexture();
+        GenTextureMipmaps(&texture);
+        SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR);
+    }
+
+    CardNameView name;
+    r::Image image;
+    r::Texture texture{};
+};
+
+struct SmallCard {
+    SmallCard(CardNameView n)
+        : name{n}
+        , image{r::Image{resources("small-cards", fmt::format("{}.png", name))}}
+    {
+        image.Resize(static_cast<int>(CardWidth), static_cast<int>(CardHeight));
+        texture = image.LoadTexture();
+        GenTextureMipmaps(&texture);
+        SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR);
     }
 
     CardNameView name;
@@ -485,6 +503,24 @@ struct Ping {
 auto loadCards() -> void
 {
     auto&& _ = getCard(PREF_SEVEN_OF_SPADES);
+}
+
+[[nodiscard]] auto getSmallCard(const CardNameView name) -> const SmallCard&
+{
+    static auto allCards = std::invoke([&] {
+        auto result = std::map<CardNameView, SmallCard>{};
+        const auto add = [&](const CardNameView name) { result.emplace(name, SmallCard{name}); };
+#define PREF_X(PREF_CARD_NAME) add(PREF_CARD_NAME);
+        PREF_CARDS
+#undef PREF_X
+        return result;
+    });
+    return allCards.at(name);
+}
+
+auto loadSmallCards() -> void
+{
+    auto&& _ = getSmallCard(PREF_SEVEN_OF_SPADES);
 }
 
 struct PassGameTalon {
@@ -1825,14 +1861,14 @@ auto updateOverallScoreboardTable() -> void
          ctx().localizeText(GameText::Duration),
          ctx().localizeText(GameText::Result),
          ctx().localizeText(GameText::MMR),
-         ctx().localizeText(GameText::PDW),
+         ctx().localizeText(GameText::DPW),
          fmt::format("{} / {}", ctx().localizeText(GameText::Games), ctx().localizeText(GameText::Type))},
         {ctx().localizeText(GameText::Total),
          std::string{"-"},
          formatDuration(total(&UserGame::duration)),
          fmt::format("{}% {}", winRate, ctx().localizeText(GameText::WinRate)),
          fmt::format("{}", rng::accumulate(games, 0, std::plus{}, &UserGame::mmr)),
-         fmt::format("{}/{}/{}", total(&UserGame::pool), total(&UserGame::dump), total(&UserGame::whists)),
+         fmt::format("{}/{}/{}", total(&UserGame::dump), total(&UserGame::pool), total(&UserGame::whists)),
          std::format("{}", totalGames)}};
     const auto view
         = games | rv::reverse | rv::enumerate | rv::transform([&](auto&& index_game) {
@@ -1846,7 +1882,7 @@ auto updateOverallScoreboardTable() -> void
                   formatDuration(game.duration()),
                   fmt::format("{} ({}{})", result, result == ctx().localizeText(GameText::Win) ? "+" : "", game.mmr()),
                   fmt::format("{}{}", mmrDiff.at(index) <= 0 ? "" : "+", mmrDiff.at(index)),
-                  fmt::format("{}/{}/{}", game.pool(), game.dump(), game.whists()),
+                  fmt::format("{}/{}/{}", game.dump(), game.pool(), game.whists()),
                   game.game_type() == GameType::RANKED ? ctx().localizeText(GameText::Ranked)
                                                        : ctx().localizeText(GameText::Normal)};
           });
@@ -2594,7 +2630,7 @@ auto drawCards(const r::Vector2& pos, Player& player, const Shift shift, const i
     const auto text = std::string{gameText};
     const auto textSize = measureGuiText(text);
     const auto sign = hasShift(shift, Negative) ? -1.f : 1.f;
-    const auto shiftX = sign * (textSize.x * 0.44f + textSize.y * 0.5f);
+    const auto shiftX = sign * (textSize.x * 0.5f + textSize.y * 0.5f);
     const auto shiftY = sign * textSize.y;
     const auto anchor = hasShift(shift, Horizont) ? r::Vector2{pos.x + shiftX, pos.y} //
                                                   : r::Vector2{pos.x, pos.y + shiftY};
@@ -2760,11 +2796,10 @@ auto drawOfferButton() -> void
                                 : (isRight(drawPosition) ? ctx().rightCardCount : ctx().leftCardCount);
 }
 
-auto drawBid(const r::Vector2& pos, const Player& player, const DrawPosition drawPosition, const Shift shift) -> bool
+auto drawBid(const r::Vector2& pos, const Player& player, const Shift shift) -> bool
 {
     return withGuiFont(ctx().fontL, [&] {
-        const auto scale = cardCount(player.hand, drawPosition) < 10 ? 1.5f : 1.f;
-        return withGuiStyle(DEFAULT, TEXT_SIZE, static_cast<int>(ctx().fontSizeM() * scale), [&] {
+        return withGuiStyle(DEFAULT, TEXT_SIZE, static_cast<int>(ctx().fontSizeM()), [&] {
             return drawGameText(pos, ctx().localizeBid(player.bid), shift).first;
         });
     });
@@ -2803,7 +2838,7 @@ auto drawMyHand() -> void
     const auto playerNameCenter = drawPlayerName(cardFirstLeftCenterPos, player, Negative | Horizont);
     const auto yourTurnTopY = drawYourTurn(cardFirstLeftTopPos, gap, totalWidth, ctx().myPlayerId);
     drawWhist(cardLastRightCenterPos, player, Positive | Horizont) //
-        or drawBid(cardLastRightCenterPos, player, {}, Positive | Horizont);
+        or drawBid(cardLastRightCenterPos, player, Positive | Horizont);
     drawSpeechBubble({playerNameCenter.x, yourTurnTopY + gap * 2}, ctx().myPlayerId, Left);
     static constexpr auto shift = 40.0f; // TOOD: make reative or calculate properly
     if (ctx().offerPopUp.isVisible) {
@@ -2844,7 +2879,7 @@ auto drawOpponentHand(const DrawPosition drawPosition) -> void
     drawCards(cardFirstLeftTopPos, player, (isRight(drawPosition) ? Negative : Positive) | Vertical, cardCount);
     const auto playerNameCenter = drawPlayerName(cardFirstCenterTopPos, player, Negative | Vertical);
     drawWhist(cardLastCenterBottomPos, player, Positive | Vertical) //
-        or drawBid(cardLastCenterBottomPos, player, drawPosition, Positive | Vertical);
+        or drawBid(cardLastCenterBottomPos, player, Positive | Vertical);
     drawSpeechBubble({playerNameCenter.x, cardFirstLeftTopPos.y - VirtualH / 11.f}, playerId, drawPosition);
     // drawDebugVertLine(cardCenterX, "cardCenterX");
     // drawDebugDot(cardFirstCenterTopPos, "cardFirstCenterTopPos");
@@ -3970,38 +4005,41 @@ auto drawLadder() -> void
     });
 }
 
-[[nodiscard]] auto measureTextCodepoints(
-    const r::Font& font, const std::span<const int> codepoints, const float fontSize, const float spacing) -> r::Vector2
-{
-    if (std::empty(codepoints)) { return {}; }
-    const auto scale = fontSize / static_cast<float>(font.baseSize);
-    auto width = 0.0f;
-    for (const auto [i, cp] : codepoints | rv::enumerate) {
-        const auto glyph = GetGlyphInfo(font, cp);
-        const auto advance = glyph.advanceX > 0 ? static_cast<float>(glyph.advanceX) //
-                                                : static_cast<float>(font.baseSize) * 0.5f;
-        width += advance * scale;
-        if (i < std::size(codepoints) - 1) { width += spacing * scale; };
-    }
-    return {width, fontSize};
-}
-
 auto drawLastTrickOrTalon() -> void
 {
     if (std::empty(ctx().lastTrickOrTalon)) { return; }
     static constexpr auto cardCenterX = CardBorderMargin + CardWidth * 0.5f;
-    static constexpr auto fontSize = CardHeight / 2.88f;
-    static constexpr auto y = VirtualH - BorderMargin - fontSize;
-    const auto lastTrickOrTalon = ctx().lastTrickOrTalon | rv::transform(&cardNameCodepoint) | rng::to_vector;
-    const auto size = measureTextCodepoints(ctx().fontL, lastTrickOrTalon, fontSize, FontSpacing);
-    const auto x = cardCenterX - size.x * 0.5f;
-    ctx().fontL.DrawText(
-        std::data(lastTrickOrTalon),
-        std::ssize(lastTrickOrTalon),
-        {x, y},
-        fontSize,
-        FontSpacing,
-        getGuiColor(TEXT_COLOR_NORMAL));
+    static constexpr auto symbolHeight = CardHeight / 2.5f;
+    static constexpr auto slotCompression = 0.84f;
+    static constexpr auto y = VirtualH - BorderMargin - symbolHeight;
+    const auto codepoints = ctx().lastTrickOrTalon | rv::transform(&cardNameCodepoint) | rng::to_vector;
+    const auto scale = symbolHeight / static_cast<float>(ctx().fontL.baseSize);
+    const auto imageWidth = symbolHeight * CardAspectRatio;
+    auto slotWidths = std::vector<float>{};
+    slotWidths.reserve(std::size(codepoints));
+    auto totalWidth = 0.f;
+    for (const auto codepoint : codepoints) {
+        const auto glyph = GetGlyphInfo(ctx().fontL, codepoint);
+        const auto advance = glyph.advanceX > 0 ? static_cast<float>(glyph.advanceX) //
+                                                : static_cast<float>(ctx().fontL.baseSize) * 0.5f;
+        const auto slotWidth = advance * scale * slotCompression;
+        slotWidths.push_back(slotWidth);
+        totalWidth += slotWidth;
+    }
+    if (std::size(codepoints) > 1) { totalWidth += FontSpacing * scale * static_cast<float>(std::size(codepoints) - 1); }
+    const auto startX = cardCenterX - totalWidth * 0.5f;
+    auto x = startX;
+    for (const auto [i, cardName] : ctx().lastTrickOrTalon | rv::enumerate) {
+        const auto slotWidth = slotWidths[i];
+        const auto imageX = x + (slotWidth - imageWidth) * 0.5f;
+        const auto& texture = getSmallCard(cardName).texture;
+        const auto sourceRec
+            = r::Rectangle{0.f, 0.f, static_cast<float>(texture.width), static_cast<float>(texture.height)};
+        const auto destRec = r::Rectangle{imageX, y, imageWidth, symbolHeight};
+        texture.Draw(sourceRec, destRec, {0.f, 0.f}, 0.f, r::Color::White());
+        x += slotWidth;
+        if ((i + 1) < std::size(codepoints)) { x += FontSpacing * scale; }
+    }
 }
 
 [[nodiscard]] auto drawFps(const float y, const Font& font, const float fontSize, const float fontSpacing) -> float
@@ -4489,6 +4527,7 @@ int main(const int argc, const char* const argv[])
     ctx.initialFont = GuiGetFont();
     pref::loadFonts();
     pref::loadCards();
+    pref::loadSmallCards();
     const auto resize
         = []([[maybe_unused]] const int eventType, [[maybe_unused]] const auto* e, [[maybe_unused]] void* ud) {
               pref::updateWindowSize();

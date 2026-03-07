@@ -226,6 +226,13 @@ message UserGame {
   int32 mmr = 8;
 }
 
+message DealPlayerScore {
+  int32 pool = 1;
+  int32 dump = 2;
+  int32 whists = 3;
+  int32 mmr = 4;
+}
+
 message Deal {
   int32 id = 1;
   map<string /*player_id*/, StringSeries /* cards */> hands = 2;
@@ -234,6 +241,7 @@ message Deal {
   string contract = 5;
   map<string /*player_id*/, string /*contract or whist/pass*/> decisions = 6;
   map<string /*player_id*/, int32 /*tricks taken*/> tricks = 7;
+  map<string /*player_id*/, DealPlayerScore> scores = 8;
 }
 
 message Game {

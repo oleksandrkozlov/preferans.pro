@@ -502,30 +502,54 @@ auto dealFinished() -> task<bool>
         = players() | rv::transform([](const Player& player) { return std::pair{player.id, player.tricksTaken}; })
         | rng::to_vector;
     addOrUpdateGameDeal(ctx().gameData, ctx().gameId, ctx().dealId, ctx().pendingDealHands, ctx().pendingDealTalon);
-    addOrUpdateGameDealResult(ctx().gameData, ctx().gameId, ctx().dealId, declarerId, contract, decisions, tricks);
 
     ctx().gameDuration = pref::durationInSec(ctx().gameStarted);
     PREF_I("gameId: {} duration: {}", ctx().gameId, formatDuration(ctx().gameDuration));
     updateScoreSheetForDeal();
     const auto finalResult = calculateFinalResult(makeFinalScore(ctx().scoreSheet));
+    auto playerDealScores = std::vector<std::pair<Player::Id, DealPlayerScore>>{};
     for (const auto& [playerId, score] : ctx().scoreSheet) {
+        auto prevPool = 0;
+        auto prevDump = 0;
+        auto prevWhists = 0;
+        auto prevMmr = 0;
+        userByPlayerId(ctx().gameData, playerId) | OnValue([&](const User& user) {
+            const auto gameIt = rng::find(user.games(), ctx().gameId, &UserGame::id);
+            if (gameIt == rng::end(user.games())) { return; }
+            prevPool = gameIt->pool();
+            prevDump = gameIt->dump();
+            prevWhists = gameIt->whists();
+            prevMmr = gameIt->mmr();
+        });
+
         PREF_DI(playerId, score.dump, score.pool);
         auto totalWhists = 0;
         for (const auto& [id, whists] : score.whists) {
             PREF_I("whists: {} -> {}", whists, id);
             totalWhists += rng::accumulate(whists, 0);
         }
+        const auto totalPool = rng::accumulate(score.pool, 0);
+        const auto totalDump = rng::accumulate(score.dump, 0);
+        const auto totalMmr = finalResult.at(playerId);
+        auto dealScore = DealPlayerScore{};
+        dealScore.set_pool(totalPool - prevPool);
+        dealScore.set_dump(totalDump - prevDump);
+        dealScore.set_whists(totalWhists - prevWhists);
+        dealScore.set_mmr(totalMmr - prevMmr);
+        playerDealScores.emplace_back(playerId, std::move(dealScore));
         addOrUpdateUserGame(
             ctx().gameData,
             playerId,
             makeUserGame(
                 ctx().gameId,
                 ctx().gameDuration,
-                rng::accumulate(score.pool, 0),
-                rng::accumulate(score.dump, 0),
+                totalPool,
+                totalDump,
                 totalWhists,
-                finalResult.at(playerId)));
+                totalMmr));
     }
+    addOrUpdateGameDealResult(
+        ctx().gameData, ctx().gameId, ctx().dealId, declarerId, contract, decisions, tricks, playerDealScores);
     PREF_DI(finalResult);
     storeGameData(ctx().gameDataPath, ctx().gameData);
     co_await sendUserGames();
