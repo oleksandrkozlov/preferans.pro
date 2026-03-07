@@ -685,7 +685,6 @@ struct Context {
     std::map<CardNameView, r::Vector2> cardPositions;
     std::vector<MovingCard> movingCards;
     bool isGameFreezed{};
-    bool needsDraw = true;
     double tick = 0.0;
     bool isGameStarted{};
 
@@ -1049,7 +1048,6 @@ auto startCardMove(const PlayerId& playerId, const Card& card, std::optional<r::
     constexpr auto durationMs = 240.0;
     std::erase_if(ctx().movingCards, [&](const MovingCard& movingCard) { return movingCard.playerId == playerId; });
     ctx().movingCards.push_back(MovingCard{playerId, &card, from, *to, emscripten_get_now(), durationMs});
-    ctx().needsDraw = true;
 }
 
 auto drawMovingCards() -> void
@@ -1062,7 +1060,6 @@ auto drawMovingCards() -> void
         movingCard.card->texture.Draw(pos);
         return progress >= 1.0;
     });
-    ctx().needsDraw = true;
 }
 
 auto sendMessage(const EMSCRIPTEN_WEBSOCKET_T ws, const Message& msg) -> bool
@@ -1071,7 +1068,6 @@ auto sendMessage(const EMSCRIPTEN_WEBSOCKET_T ws, const Message& msg) -> bool
         PREF_W("error: ws is not open");
         return false;
     }
-    ctx().needsDraw = true;
     auto data = msg.SerializeAsString();
     if (const auto result = emscripten_websocket_send_binary(ws, data.data(), std::size(data));
         result != EMSCRIPTEN_RESULT_SUCCESS) {
@@ -1584,7 +1580,6 @@ auto handlePlayerTurn(const Message& msg) -> void
             if (not allCardsAlreadyApplied and not rng::equal(ctx().pendingTalonReveal, talonCards)) {
                 ctx().pendingTalonReveal = std::move(talonCards);
                 ctx().pendingTalonRevealUntil = ctx().window.GetTime() + 2.0;
-                ctx().needsDraw = true;
             }
         }
         applyPendingTalonReveal();
@@ -1940,7 +1935,6 @@ auto applyPendingTalonReveal() -> void
     if (isMyTurn) { ctx().myPlayer().sortCards(); }
     ctx().pendingTalonReveal.clear();
     ctx().pendingTalonRevealUntil = 0.0;
-    ctx().needsDraw = true;
 }
 
 auto updateWindowSize() -> void
@@ -1998,7 +1992,6 @@ auto dispatchMessage(const std::optional<Message>& msg) -> void
     const auto& method = msg->method();
 #define PREF_X(PREF_MSG_NAME)                                                                                          \
     if (method == std::string_view{#PREF_MSG_NAME}) {                                                                  \
-        ctx().needsDraw = true;                                                                                        \
         return handle##PREF_MSG_NAME(*msg);                                                                            \
     }
     PREF_METHODS;
@@ -2347,7 +2340,6 @@ auto drawTalonDiscardPopUp() -> void
         ctx().discardedTalon.clear();
     }
     ctx().talonDiscardPopUp.isVisible = false;
-    ctx().needsDraw = true;
 }
 
 [[maybe_unused]] auto drawMessageBox(
@@ -3254,13 +3246,11 @@ auto handleTalonCardClick(std::list<const Card*>& hand) -> void
             selectedIt != rng::end(ctx().discardedTalon)) {
             ctx().discardedTalon.erase(selectedIt);
             if (std::size(ctx().discardedTalon) < 2) { ctx().talonDiscardPopUp.isVisible = false; }
-            ctx().needsDraw = true;
             return;
         }
         if (std::size(ctx().discardedTalon) >= 2) { return; }
         ctx().discardedTalon.push_back(cardName);
         if (std::size(ctx().discardedTalon) == 2) { ctx().talonDiscardPopUp.isVisible = true; }
-        ctx().needsDraw = true;
     }
 }
 
@@ -3420,7 +3410,6 @@ auto toggleMic() -> void
     }, ctx().microphone.isMuted);
 #pragma GCC diagnostic pop
     // clang-format on
-    ctx().needsDraw = true;
 }
 
 auto drawToolbarButton(
@@ -4374,31 +4363,8 @@ auto updateMenuPosition(Menu& menu) -> void
     if (r::Mouse::IsButtonReleased(MOUSE_LEFT_BUTTON)) { menu.moving = false; };
 }
 
-auto needsDraw() -> bool
-{
-    const auto deltaMouse = r::Mouse::GetDelta();
-    const auto now = emscripten_get_now();
-    const auto timeToDraw = now >= ctx().tick;
-    static constexpr auto fps = 36.0;
-    static constexpr auto deltaTime = 1.0 / fps * 1000.0;
-    if (timeToDraw) { ctx().tick = now + deltaTime; }
-    if (not ctx().needsDraw
-        && ((deltaMouse.x != 0.0f or deltaMouse.y != 0.0f)
-            or timeToDraw
-            or r::Mouse::IsButtonPressed(MOUSE_LEFT_BUTTON)
-            or r::Mouse::IsButtonReleased(MOUSE_LEFT_BUTTON)
-            or r::Mouse::IsButtonDown(MOUSE_LEFT_BUTTON)
-            or r::Keyboard::IsKeyPressed(KEY_ENTER)
-            or r::Keyboard::IsKeyPressed(KEY_ESCAPE)
-            or ctx().window.IsResized())) {
-        ctx().needsDraw = true;
-    }
-    return ctx().needsDraw;
-}
-
 auto updateDrawFrame([[maybe_unused]] void* ud) -> void
 {
-    if (not needsDraw()) { return; }
     applyPendingTalonReveal();
     if (GuiIsLocked()
         and not ctx().settingsMenu.moving
@@ -4461,7 +4427,6 @@ auto updateDrawFrame([[maybe_unused]] void* ud) -> void
             -static_cast<float>(ctx().target.GetTexture().height)}, // flip vertically
         r::Rectangle{ctx().offsetX, ctx().offsetY, VirtualW * ctx().scale, VirtualH * ctx().scale});
     ctx().window.EndDrawing();
-    ctx().needsDraw = false;
 }
 
 constexpr auto usage = R"(
@@ -4485,7 +4450,6 @@ auto setMicStatus(std::string status, const bool isError) -> void
     }
     ctx().microphone.status = std::move(status);
     ctx().microphone.isError = isError;
-    ctx().needsDraw = true;
 }
 
 } // namespace pref
