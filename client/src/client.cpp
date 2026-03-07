@@ -136,8 +136,6 @@ struct Card {
     {
         image.Resize(static_cast<int>(CardWidth), static_cast<int>(CardHeight));
         texture = image.LoadTexture();
-        GenTextureMipmaps(&texture);
-        SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR);
     }
 
     CardNameView name;
