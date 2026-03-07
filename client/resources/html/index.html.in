@@ -48,6 +48,74 @@
         },
         canvas: (function () {
           var canvas = document.getElementById("canvas");
+          let activeTouchId = null;
+          let hoverClearHandle = null;
+          const hoverClearDelayMs = 125;
+
+          function emitMouse(type, touch) {
+            canvas.dispatchEvent(new MouseEvent(type, {
+              bubbles: true,
+              cancelable: true,
+              clientX: touch.clientX,
+              clientY: touch.clientY,
+              button: 0,
+              buttons: type === "mouseup" ? 0 : 1,
+            }));
+          }
+
+          function clearSyntheticHover() {
+            hoverClearHandle = null;
+            const rect = canvas.getBoundingClientRect();
+            canvas.dispatchEvent(new MouseEvent("mousemove", {
+              bubbles: true,
+              cancelable: true,
+              clientX: rect.left - 1,
+              clientY: rect.top - 1,
+              button: 0,
+              buttons: 0,
+            }));
+          }
+
+          function scheduleHoverClear() {
+            if (hoverClearHandle !== null) { clearTimeout(hoverClearHandle); }
+            hoverClearHandle = setTimeout(clearSyntheticHover, hoverClearDelayMs);
+          }
+
+          function activeTouch(touches) {
+            if (activeTouchId === null) { return null; }
+            return Array.from(touches).find(touch => touch.identifier === activeTouchId) ?? null;
+          }
+
+          function onTouch(event) {
+            if (event.type === "touchstart") {
+              if (hoverClearHandle !== null) {
+                clearTimeout(hoverClearHandle);
+                hoverClearHandle = null;
+              }
+              if (activeTouchId !== null || event.changedTouches.length === 0) { return; }
+              activeTouchId = event.changedTouches[0].identifier;
+            }
+
+            const touch = activeTouch(event.changedTouches);
+            if (!touch) {
+              if (event.type === "touchcancel") { activeTouchId = null; }
+              return;
+            }
+
+            emitMouse("mousemove", touch);
+            if (event.type === "touchstart") { emitMouse("mousedown", touch); }
+            if (event.type === "touchend" || event.type === "touchcancel") {
+              emitMouse("mouseup", touch);
+              scheduleHoverClear();
+              activeTouchId = null;
+            }
+            event.preventDefault();
+          }
+
+          for (const type of ["touchstart", "touchmove", "touchend", "touchcancel"]) {
+            canvas.addEventListener(type, onTouch, { passive: false });
+          }
+
           return canvas;
         })(),
         setStatus: function (text) {

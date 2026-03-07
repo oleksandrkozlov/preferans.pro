@@ -16,6 +16,6 @@ mkdir -p ./server/data
 touch ./server/data/game.dat
 
 source /etc/profile.d/emscripten.sh
-emcmake cmake -S client -B build-client -G "Unix Makefiles"  -DCMAKE_BUILD_TYPE=$BUILD_TYPE -Dprotobuf_BUILD_TESTS=OFF -DPLATFORM=Web -DCMAKE_WEBSOCKET_URL=$WS_PROTOCOL://$WS_HOST:$WS_PORT -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+emcmake cmake -S client -B build-client -G "Unix Makefiles"  -DCMAKE_BUILD_TYPE=$BUILD_TYPE -Dprotobuf_BUILD_TESTS=OFF -DPLATFORM=Web -DCMAKE_PREF_HOST=$WS_HOST -DCMAKE_WEBSOCKET_URL=$WS_PROTOCOL://$WS_HOST:$WS_PORT -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 cmake --build build-client -j `nproc` --target docopt fmt libprotobuf-lite raylib spdlog
 cmake --build build-client -j `nproc` --target client

@@ -143,9 +143,9 @@ auto setNextDealTurn() -> void
     switch (level) {
     case Six: return 4;
     case Seven: return 2;
-    case Eight:
-    case Nine: [[fallthrough]];
-    case Ten: return 1;
+    case Eight: [[fallthrough]];
+    case Nine: return 1;
+    case Ten: [[fallthrough]];
     case Miser: return 0;
     };
     std::unreachable();
@@ -157,9 +157,9 @@ auto setNextDealTurn() -> void
     switch (level) {
     case Six: return 2;
     case Seven:
-    case Eight:
-    case Nine: [[fallthrough]];
-    case Ten: return 1;
+    case Eight: [[fallthrough]];
+    case Nine: return 1;
+    case Ten: [[fallthrough]];
     case Miser: return 0;
     };
     std::unreachable();
@@ -409,12 +409,25 @@ auto dealCards() -> task<>
     }
 }
 
+auto clearGameState() -> void
+{
+    ctx().clear();
+    ctx().stage = GameStage::UNKNOWN;
+    ctx().forehandId = {};
+    ctx().scoreSheet = {};
+    ctx().gameStarted = {};
+    ctx().gameDuration = {};
+    ctx().dealId = {};
+}
+
 auto removePlayer(Player::Id playerId) -> task<>
 {
     assert(ctx().players.contains(playerId) and "player exists");
     PREF_DI(playerId);
     ctx().players.erase(playerId);
     co_await sendPlayerLeft(std::move(playerId));
+    co_await sendDealFinished(true);
+    clearGameState();
 }
 
 auto disconnected(Player::Id playerId) -> task<>
@@ -422,7 +435,7 @@ auto disconnected(Player::Id playerId) -> task<>
     PREF_DI(playerId);
     auto& player = ctx().player(playerId);
     if (not player.conn.reconnectTimer) { player.conn.reconnectTimer.emplace(player.conn.ch->get_executor()); }
-    player.conn.reconnectTimer->expires_after(10s);
+    player.conn.reconnectTimer->expires_after(60s);
     if (const auto [error] = co_await player.conn.reconnectTimer->async_wait(); error) {
         if (error != net::error::operation_aborted) { PREF_DW(error); }
         co_return;
@@ -447,14 +460,16 @@ using TrickComparator = std::function<bool(int, int)>;
         .value_or(false);
 }
 
-auto updateScoreSheetForDeal() -> void
+auto updateScoreSheetForDeal(const bool isDownThreeTricks) -> void
 {
     findDeclarerId() | OnValue([&](const Player::Id& declarerId) {
         const auto& declarerPlayer = ctx().players.at(declarerId);
         const auto declarer = Declarer{
             .id = declarerId,
             .contractLevel = makeContractLevel(declarerPlayer.bid),
-            .tricksTaken = declarerPlayer.tricksTaken};
+            .tricksTaken = declarerPlayer.tricksTaken,
+            .isDownThreeTricks = isDownThreeTricks,
+        };
         auto whisters = std::vector<Whister>{};
         for (const auto& passerPlayer : getTwoPassers()) {
             whisters.emplace_back(
@@ -483,7 +498,7 @@ auto updateScoreSheetForDeal() -> void
     });
 }
 
-auto dealFinished() -> task<bool>
+auto dealFinished(const bool isDownThreeTricks) -> task<bool>
 {
     const auto declarerId = findDeclarerId().transform([](const Player::Id& id) { return std::string{id}; }).value_or("");
     const auto contract = std::empty(declarerId) ? std::string{} : ctx().players.at(declarerId).bid;
@@ -505,7 +520,7 @@ auto dealFinished() -> task<bool>
 
     ctx().gameDuration = pref::durationInSec(ctx().gameStarted);
     PREF_I("gameId: {} duration: {}", ctx().gameId, formatDuration(ctx().gameDuration));
-    updateScoreSheetForDeal();
+    updateScoreSheetForDeal(isDownThreeTricks);
     const auto finalResult = calculateFinalResult(makeFinalScore(ctx().scoreSheet));
     auto playerDealScores = std::vector<std::pair<Player::Id, DealPlayerScore>>{};
     for (const auto& [playerId, score] : ctx().scoreSheet) {
@@ -629,6 +644,11 @@ auto handleLoginRequest(const Message& msg, const ChannelPtr& ch) -> task<Player
     assert(userPlayerId(ctx().gameData, playerName));
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
     const auto playerId = *userPlayerId(ctx().gameData, playerName);
+    if (std::size(ctx().players) == NumberOfPlayers and not ctx().players.contains(playerId)) {
+        PREF_W("error: party is full");
+        co_await sendLoginResponse(ch, "party is full");
+        co_return session;
+    }
     auto authToken = generateClientAuthToken();
     addAuthToken(ctx().gameData, playerId, toServerAuthToken(authToken));
     storeGameData(ctx().gameDataPath, ctx().gameData);
@@ -654,8 +674,9 @@ auto handleAuthRequest(const Message& msg, const ChannelPtr& ch) -> task<PlayerS
     if (not authRequest) { co_return PlayerSession{}; }
     auto session = PlayerSession{};
     const auto playerId = authRequest->player_id();
-    if (not verifyPlayerIdAndAuthToken(ctx().gameData, playerId, toServerAuthToken(authRequest->auth_token()))) {
-        auto error = fmt::format("unknown {} or wrong auth token", PREF_V(playerId));
+    if ((std::size(ctx().players) == NumberOfPlayers and not ctx().players.contains(playerId))
+        or not verifyPlayerIdAndAuthToken(ctx().gameData, playerId, toServerAuthToken(authRequest->auth_token()))) {
+        auto error = fmt::format("party is full or unknown {} or wrong auth token", PREF_V(playerId));
         PREF_DW(error);
         co_await sendAuthResponse(ch, std::move(error));
         co_return session;
@@ -724,14 +745,26 @@ auto handleBidding(const Message& msg) -> task<>
 }
 
 auto startPlayingFromForehand() -> task<>;
+auto finishDeal(bool isDownThreeTricks = false) -> task<>;
 
 auto handleDiscardTalon(const Message& msg) -> task<>
 {
     auto discardTalon = makeMethod<DiscardTalon>(msg);
     if (not discardTalon) { co_return; }
     const auto playerId = discardTalon->player_id();
-    ctx().player(playerId).bid = std::move(*discardTalon->mutable_bid());
-    const auto& bid = ctx().player(playerId).bid;
+    auto& declarer = ctx().player(playerId);
+    if (const auto isDownThreeTricks = discardTalon->bid() == PREF_PASS; isDownThreeTricks) {
+        declarer.tricksTaken = declarerReqTricks(makeContractLevel(declarer.bid)) - 3;
+        assert(declarer.tricksTaken >= 3 and declarer.tricksTaken <= 7);
+        for (auto& p : players()) {
+            if (p.bid == playerId) { continue; }
+            p.whistingChoice = PREF_PASS;
+        }
+        co_await finishDeal(true);
+        co_return;
+    }
+    declarer.bid = std::move(*discardTalon->mutable_bid());
+    const auto& bid = declarer.bid;
     for (auto& card : *discardTalon->mutable_cards()) {
         ctx().talon.discardedCards.push_back(card);
         removeCardFromHand(playerId, std::move(card));
@@ -761,18 +794,12 @@ auto handlePingPong(const Message& msg, const ChannelPtr& ch) -> task<>
     co_await sendPingPong(msg, ch);
 }
 
-auto finishDeal() -> task<>
+auto finishDeal(const bool isDownThreeTricks) -> task<>
 {
-    const auto isGameOver = co_await dealFinished();
+    const auto isGameOver = co_await dealFinished(isDownThreeTricks);
     PREF_DI(isGameOver);
     if (isGameOver) {
-        ctx().clear();
-        ctx().stage = GameStage::UNKNOWN;
-        ctx().forehandId = {};
-        ctx().scoreSheet = {};
-        ctx().gameStarted = {};
-        ctx().gameDuration = {};
-        ctx().dealId = {};
+        clearGameState();
         co_return;
     }
     co_await sleepFor(3s, ctx().ex);
@@ -836,10 +863,12 @@ auto handleWhisting(const Message& msg) -> task<>
     }
     if (Context::isPassAfterHalfWhist()) {
         playerByWhistingChoice(ctx().players, PassPass).whistingChoice = PREF_PASS;
+        ctx().passGame.resetRound();
         updateDeclarerTakenTricks();
         co_return co_await finishDeal();
     }
     if (Context::areWhistersPass()) {
+        ctx().passGame.resetRound();
         updateDeclarerTakenTricks();
         co_return co_await finishDeal();
     }
@@ -1217,7 +1246,11 @@ auto Context::countWhistingChoice(const WhistingChoice choice) -> std::ptrdiff_t
 
     const auto makeWhisterScore = [&](const Whister& w) {
         auto result = DealScoreEntry{};
-        if (declarer.contractLevel == ContractLevel::Miser) { return result; }
+        if (declarer.contractLevel == ContractLevel::Miser
+            or declarer.contractLevel == ContractLevel::Ten
+            or declarer.isDownThreeTricks) {
+            return result;
+        }
         if (w.choice == WhistingChoice::Whist) {
             result.whist += w.tricksTaken * contractPrice;
             if (deficit(twoWhistersReqTricks, whistersTakenTricks) > 0) {

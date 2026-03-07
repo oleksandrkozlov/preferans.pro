@@ -63,6 +63,7 @@ touch ./server/data/game.dat
 source /etc/profile.d/emscripten.sh
 emcmake cmake -S client -B build-client -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Debug \
     -Dprotobuf_BUILD_TESTS=OFF -DPLATFORM=Web \
+    -DCMAKE_PREF_HOST=0.0.0.0 \
     -DCMAKE_WEBSOCKET_URL=ws://0.0.0.0:8080 \
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 cmake --build build-client -j `nproc` --target docopt fmt libprotobuf-lite raylib spdlog

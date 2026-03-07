@@ -66,6 +66,7 @@ inline constexpr std::string_view DiamondSign = PREF_DIAMOND;
 #define PREF_PASS_WHIST PREF_PASS PREF_WHIST
 #define PREF_PASS_PASS PREF_PASS PREF_PASS
 #define PREF_CATCH "Catch"
+#define PREF_CHECK "Check"
 #define PREF_TRUST "Trust"
 #define PREF_OPENLY "Openly"
 

@@ -102,6 +102,7 @@ struct Declarer {
     Player::Id id;
     ContractLevel contractLevel = ContractLevel::Six;
     int tricksTaken{};
+    bool isDownThreeTricks{};
 };
 
 struct Talon {
@@ -150,7 +151,6 @@ struct PassGame {
 
     auto resetRound() -> void
     {
-        assert(round != 0);
         round = 0;
     }
 

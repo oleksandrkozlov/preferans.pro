@@ -75,7 +75,7 @@
     }
     .summary-cards {
       display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      grid-template-columns: repeat(7, minmax(0, 1fr));
       gap: 8px;
       margin-bottom: 8px;
     }
@@ -85,6 +85,16 @@
       background: var(--table-bg-alt);
       padding: 7px 8px;
       min-width: 0;
+    }
+    .summary-card[data-action] {
+      cursor: pointer;
+    }
+    .summary-card[data-action]:hover {
+      border-color: var(--accent);
+    }
+    .summary-card.is-active {
+      border-color: var(--accent);
+      box-shadow: inset 0 0 0 1px rgba(139, 233, 253, 0.35);
     }
     .summary-label {
       color: var(--muted);
@@ -381,7 +391,7 @@
       handStatsCacheKey: "",
       handStatsLoading: false,
       handStatsError: "",
-      handMatches: { hands: [], akq: [], akqj: [], aces3: [], declarer: [], pass: [], whist: [] },
+      handMatches: { hands: [], akq: [], akqj: [], aces3: [], miser: [], declarer: [], pass: [], whist: [] },
       activeHandFilter: "",
       pendingGameScrollId: null
     };
@@ -524,6 +534,17 @@
       return (text === "" || text === "-") ? "Pass" : text;
     }
 
+    function isMiserContract(contract) {
+      const key = String(contract ?? "").trim().toLowerCase().replaceAll(" ", "");
+      return (
+        key.includes("misère") ||
+        key.includes("miser") ||
+        key.includes("мизер") ||
+        key.includes("mis.wt") ||
+        key.includes("miswt")
+      );
+    }
+
     function bidHtml(text) {
       const normalized = normalizeContract(text);
       const safe = esc(normalized);
@@ -561,6 +582,36 @@
       } catch (_) {}
     }
 
+    function applySelectedUserIdFromUrl() {
+      try {
+        const url = new URL(window.location.href);
+        const selectedUserId = url.searchParams.get("selectedUserId");
+        if (!selectedUserId) return { selectedUserFromUrl: false, selectLatestGame: false };
+        const selectLatestGame = url.searchParams.get("selectLatestGame") === "1";
+        state.selectedUserId = selectedUserId;
+        state.selectedGameId = null;
+        state.selectedGameDisplayId = null;
+        url.searchParams.delete("selectedUserId");
+        url.searchParams.delete("selectLatestGame");
+        window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+        return { selectedUserFromUrl: true, selectLatestGame };
+      } catch (_) {}
+      return { selectedUserFromUrl: false, selectLatestGame: false };
+    }
+
+    function latestGameId(games) {
+      let latest = null;
+      for (const g of (Array.isArray(games) ? games : [])) {
+        const id = Number(g?.id || 0);
+        const timestamp = Number(g?.timestamp || 0);
+        if (!Number.isFinite(id)) continue;
+        if (!latest || timestamp > latest.timestamp || (timestamp === latest.timestamp && id > latest.id)) {
+          latest = { id, timestamp };
+        }
+      }
+      return latest ? latest.id : null;
+    }
+
     function syncSelectedGameDisplayId() {
       if (state.selectedGameId === null) {
         state.selectedGameDisplayId = null;
@@ -575,7 +626,7 @@
       state.handStatsCacheKey = "";
       state.handStatsLoading = false;
       state.handStatsError = "";
-      state.handMatches = { hands: [], akq: [], akqj: [], aces3: [], declarer: [], pass: [], whist: [] };
+      state.handMatches = { hands: [], akq: [], akqj: [], aces3: [], miser: [], declarer: [], pass: [], whist: [] };
     }
 
     function hasSuitedRanksInHand(cards, requiredRanks) {
@@ -707,6 +758,8 @@
       let threePlusAces = 0;
       let declarerCount = 0;
       let declarerMadeCount = 0;
+      let miserCount = 0;
+      let miserMadeCount = 0;
       let declarerTalonHcpTotal = 0;
       let decisionSamples = 0;
       let passCount = 0;
@@ -726,6 +779,10 @@
             declarerCount += 1;
             const declarerDealMmr = Number(deal?.scores?.[playerId]?.mmr || 0);
             if (declarerDealMmr > 0) declarerMadeCount += 1;
+            if (isMiserContract(deal?.contract)) {
+              miserCount += 1;
+              if (declarerDealMmr > 0) miserMadeCount += 1;
+            }
             const talon = Array.isArray(deal?.talon) ? deal.talon : [];
             let talonHcp = 0;
             for (const tc of talon) {
@@ -797,6 +854,8 @@
         threePlusAcesPct: percentText(threePlusAces, handsCount),
         declarerPct: percentText(declarerCount, handsCount),
         declarerMadePct: percentText(declarerMadeCount, declarerCount),
+        miserCount,
+        miserMadePct: percentText(miserMadeCount, miserCount),
         avgDeclarerTalonHcp: declarerCount ? (declarerTalonHcpTotal / declarerCount) : 0,
         passRatePct: percentText(passCount, decisionSamples),
         passMadePct: percentText(passMadeCount, passCount),
@@ -830,6 +889,10 @@
               if (normalizeCard(c).rank === "A") aces += 1;
             }
             return aces >= 3;
+          }),
+          miser: collectMatchesForPlayer(state.selectedUserId, valid, (_cards, deal, playerId) => {
+            if (deal?.declarer_id !== playerId) return false;
+            return isMiserContract(deal?.contract);
           }),
           declarer: collectMatchesForPlayer(state.selectedUserId, valid, (_cards, deal, playerId) => deal?.declarer_id === playerId),
           pass: collectMatchesForPlayer(state.selectedUserId, valid, (_cards, deal, playerId) => {
@@ -1176,6 +1239,10 @@
               <div class="summary-label">Games</div>
               <div class="summary-value">${totals.totalGames}</div>
             </div>
+            <div class="summary-card ${state.activeHandFilter === "hands" ? "is-active" : ""}" data-action="filter-hands" data-tip="Total number of deals.">
+              <div class="summary-label">Deals</div>
+              <div class="summary-value">${state.handStatsLoading ? "..." : (state.handStats ? state.handStats.handsCount : "-")}</div>
+            </div>
             <div class="summary-card" data-tip="Net MMR change.">
               <div class="summary-label">MMR</div>
               <div class="summary-value ${scoreClass(String(totals.totalMmr))}">${totals.totalMmr > 0 ? "+" : ""}${totals.totalMmr}</div>
@@ -1206,10 +1273,10 @@
                   ? `<div class="empty">No hands found for this user.</div>`
                   : `
                     <div class="hand-stats-grid">
-                      <div class="hand-stat-card ${state.activeHandFilter === "hands" ? "is-active" : ""}" data-action="filter-hands" data-tip="Total number of deals."><div class="hand-stat-label">Deals</div><div class="hand-stat-value">${state.handStats.handsCount}</div></div>
                       <div class="hand-stat-card ${state.activeHandFilter === "declarer" ? "is-active" : ""}" data-action="filter-declarer" data-tip="Percentage of deals played as declarer.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Declarer Rate</div><div class="hand-stat-value">${state.handStats.declarerPct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.declarerMadePct)}">${state.handStats.declarerMadePct}</span></span></div></div>
                       <div class="hand-stat-card ${state.activeHandFilter === "pass" ? "is-active" : ""}" data-action="filter-pass" data-tip="Percentage of deals passed.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Pass Rate</div><div class="hand-stat-value">${state.handStats.passRatePct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.passMadePct)}">${state.handStats.passMadePct}</span></span></div></div>
                       <div class="hand-stat-card ${state.activeHandFilter === "whist" ? "is-active" : ""}" data-action="filter-whist" data-tip="Percentage of deals played as whist/half-whist.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Whist Rate</div><div class="hand-stat-value">${state.handStats.whistRatePct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.whistMadePct)}">${state.handStats.whistMadePct}</span></span></div></div>
+                      <div class="hand-stat-card ${state.activeHandFilter === "miser" ? "is-active" : ""}" data-action="filter-miser" data-tip="Number of deals played as misère.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Misère</div><div class="hand-stat-value">${state.handStats.miserCount}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.miserMadePct)}">${state.handStats.miserMadePct}</span></span></div></div>
                       <div class="hand-stat-card ${state.activeHandFilter === "akq" ? "is-active" : ""}" data-action="filter-akq" data-tip="Percentage of hands with at least one suited AKQ combination (e.g., A♠ K♠ Q♠).&#10;In a uniformly random deal, the expected value is 9.54%."><div class="hand-stat-label">AKQ Suited</div><div class="hand-stat-value">${state.handStats.suitedAKQPct}<span class="hand-stat-delta ${scoreClass(formatSignedPpDelta(state.handStats.suitedAKQRate - 9.5385))}">${formatSignedPpDelta(state.handStats.suitedAKQRate - 9.5385)}</span></div></div>
                       <div class="hand-stat-card ${state.activeHandFilter === "akqj" ? "is-active" : ""}" data-action="filter-akqj" data-tip="Percentage of hands with at least one suited AKQJ combination (e.g., A♠ K♠ Q♠ J♠).&#10;In a uniformly random deal, the expected value is 2.33%."><div class="hand-stat-label">AKQJ Suited</div><div class="hand-stat-value">${state.handStats.suitedAKQJPct}<span class="hand-stat-delta ${scoreClass(formatSignedPpDelta(state.handStats.suitedAKQJRate - 2.3334))}">${formatSignedPpDelta(state.handStats.suitedAKQJRate - 2.3334)}</span></div></div>
                       <div class="hand-stat-card ${state.activeHandFilter === "aces3" ? "is-active" : ""}" data-action="filter-aces3" data-tip="Percentage of hands with three or more aces (e.g., A♠ A♦ A♣).&#10;In a uniformly random deal, the expected value is 7.93%."><div class="hand-stat-label">3+ Aces</div><div class="hand-stat-value">${state.handStats.threePlusAcesPct}<span class="hand-stat-delta ${scoreClass(formatSignedPpDelta(state.handStats.threePlusAcesRate - 7.9255))}">${formatSignedPpDelta(state.handStats.threePlusAcesRate - 7.9255)}</span></div></div>
@@ -1221,7 +1288,7 @@
           </div>
           ${state.activeHandFilter ? `
           <div class="section">
-            <h2>${state.activeHandFilter === "hands" ? "Deals" : (state.activeHandFilter === "akq" ? "AKQ Suited Deals" : (state.activeHandFilter === "akqj" ? "AKQJ Suited Deals" : (state.activeHandFilter === "aces3" ? "3+ Aces Deals" : (state.activeHandFilter === "declarer" ? "Declarer Deals" : (state.activeHandFilter === "pass" ? "Pass Deals" : "Whist Deals")))))} • ${state.handMatches[state.activeHandFilter]?.length || 0}</h2>
+            <h2>${state.activeHandFilter === "hands" ? "Deals" : (state.activeHandFilter === "akq" ? "AKQ Suited Deals" : (state.activeHandFilter === "akqj" ? "AKQJ Suited Deals" : (state.activeHandFilter === "aces3" ? "3+ Aces Deals" : (state.activeHandFilter === "miser" ? "Misère Deals" : (state.activeHandFilter === "declarer" ? "Declarer Deals" : (state.activeHandFilter === "pass" ? "Pass Deals" : "Whist Deals"))))))} • ${state.handMatches[state.activeHandFilter]?.length || 0}</h2>
             ${(state.handMatches[state.activeHandFilter]?.length || 0) === 0 ? `<div class="empty">No matching deals found.</div>` : `
               <div class="filtered-table-wrap">
                 <table class="filtered-deals-table">
@@ -1389,6 +1456,17 @@
       content.querySelectorAll("[data-action='filter-aces3']").forEach(el => {
         el.addEventListener("click", () => {
           state.activeHandFilter = state.activeHandFilter === "aces3" ? "" : "aces3";
+          state.selectedGameId = null;
+          state.selectedGameDisplayId = null;
+          state.gameDetails = null;
+          state.gameDetailsMessage = "";
+          saveViewState();
+          renderMain();
+        });
+      });
+      content.querySelectorAll("[data-action='filter-miser']").forEach(el => {
+        el.addEventListener("click", () => {
+          state.activeHandFilter = state.activeHandFilter === "miser" ? "" : "miser";
           state.selectedGameId = null;
           state.selectedGameDisplayId = null;
           state.gameDetails = null;
@@ -1603,15 +1681,24 @@
           });
         }
         loadViewState();
+        const urlSelection = applySelectedUserIdFromUrl();
         await loadUsers();
         if (state.selectedUserId && state.users.some(u => u.player_id === state.selectedUserId)) {
           await loadGames();
-          syncSelectedGameDisplayId();
-          if (state.selectedGameId !== null && state.games.some(g => Number(g.id) === state.selectedGameId)) {
-            await loadSelectedGameDetails();
+          if (urlSelection.selectedUserFromUrl && urlSelection.selectLatestGame) {
+            state.selectedGameId = latestGameId(state.games);
+            syncSelectedGameDisplayId();
+            if (state.selectedGameId !== null) {
+              await loadSelectedGameDetails();
+            }
           } else {
-            state.selectedGameId = null;
-            state.selectedGameDisplayId = null;
+            syncSelectedGameDisplayId();
+            if (state.selectedGameId !== null && state.games.some(g => Number(g.id) === state.selectedGameId)) {
+              await loadSelectedGameDetails();
+            } else {
+              state.selectedGameId = null;
+              state.selectedGameDisplayId = null;
+            }
           }
         } else {
           state.selectedUserId = null;

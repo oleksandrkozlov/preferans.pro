@@ -113,6 +113,35 @@ enum class DrawPosition { Left, Right };
     return not isRight(drawPosition);
 }
 
+[[nodiscard]] constexpr auto handCardGapX(const std::size_t cardCount) noexcept -> float
+{
+    static constexpr auto maxHandSize = 12uz;
+    if (cardCount >= maxHandSize) { return CardOverlapX; }
+    static constexpr auto TargetTwoCardOverlap = 0.15f; // 2 cards keeps 15% overlap
+    static constexpr auto targetTwoCardVisibleWidth = (1.f - TargetTwoCardOverlap) * CardWidth;
+    static constexpr auto maxHandGapX = (static_cast<float>(maxHandSize - 1) * targetTwoCardVisibleWidth - CardOverlapX)
+        / static_cast<float>(maxHandSize - 2);
+    if (cardCount <= 1) { return maxHandGapX; }
+    const auto missingCards = static_cast<float>(maxHandSize - cardCount);
+    const auto maxGapIncrease = maxHandGapX - CardOverlapX;
+    return CardOverlapX + missingCards * (maxGapIncrease / static_cast<float>(maxHandSize - 1));
+}
+
+[[nodiscard]] constexpr auto handCardGapY(const std::size_t cardCount) noexcept -> float
+{
+    static constexpr auto maxHandSize = 10uz;
+    if (cardCount >= maxHandSize) { return CardOverlapY; }
+    static constexpr auto TargetTwoCardOverlap = 0.15f; // 2 cards keeps 15% overlap
+    static constexpr auto targetTwoCardVisibleHeight = (1.f - TargetTwoCardOverlap) * CardHeight;
+    static constexpr auto maxHandGapY
+        = (static_cast<float>(maxHandSize - 1) * targetTwoCardVisibleHeight - CardOverlapY)
+        / static_cast<float>(maxHandSize - 2);
+    if (maxHandSize <= 1) { return maxHandGapY; }
+    const auto progress = static_cast<float>(maxHandSize - cardCount) / static_cast<float>(maxHandSize - 1);
+    const auto maxGapIncrease = maxHandGapY - CardOverlapY;
+    return CardOverlapY + progress * progress * progress * maxGapIncrease;
+}
+
 template<typename... Args>
 [[nodiscard]] auto resources(Args&&... args) -> std::string
 {
@@ -381,6 +410,7 @@ auto withGuiState(const int newState, const bool condition, Draw&& draw)
     if (choice == localizeText(Whist, GameLang::English)) { return Whist; }
     if (choice == localizeText(HalfWhist, GameLang::English)) { return HalfWhist; }
     if (choice == localizeText(Catch, GameLang::English)) { return Catch; }
+    if (choice == localizeText(Check, GameLang::English)) { return Check; }
     if (choice == localizeText(Trust, GameLang::English)) { return Trust; }
     if (choice == localizeText(Pass, GameLang::English)) { return Pass; }
     return None;
@@ -406,6 +436,10 @@ struct SettingsMenu {
     r::Vector2 grabOffset{};
     bool moving{};
     r::Vector2 windowBoxPos{MenuX - windowBoxW, BorderMargin};
+};
+
+struct VirtualKeyboard {
+    bool isVisible{};
 };
 
 struct ScoreSheetMenu {
@@ -463,6 +497,19 @@ struct MovingCard {
 
 struct LogoutMessage {
     bool isVisible{};
+};
+
+struct PlayerLeftPopUp {
+    bool isVisible{};
+    std::string playerName;
+    double visibleUntil{};
+
+    auto clear() -> void
+    {
+        isVisible = {};
+        playerName = {};
+        visibleUntil = {};
+    }
 };
 
 struct MiserCardsPanel {
@@ -568,6 +615,7 @@ struct ReadyCheckPopUp {
 
 struct TalonDiscardPopUp {
     bool isVisible{};
+    bool isDownThreeTricks{};
 };
 
 struct OfferButton {
@@ -669,12 +717,14 @@ struct Context {
     PassGameTalon passGameTalon;
     GameLang lang{};
     SettingsMenu settingsMenu;
+    VirtualKeyboard virtualKeyboard;
     ScoreSheetMenu scoreSheet;
     SpeechBubbleMenu speechBubbleMenu;
     OverallScoreboard overallScoreboard;
     LadderMenu ladderMenu;
     MiserCardsPanel miserCardsPanel;
     LogoutMessage logoutMessage;
+    PlayerLeftPopUp playerLeftPopUp;
     StartGameButton startGameButton;
     ReadyCheckPopUp readyCheckPopUp;
     TalonDiscardPopUp talonDiscardPopUp;
@@ -713,6 +763,8 @@ struct Context {
         isGameFreezed = false;
         offerButton.clear();
         offerPopUp.isVisible = false;
+        talonDiscardPopUp.isVisible = false;
+        talonDiscardPopUp.isDownThreeTricks = false;
         for (auto& p : players | rv::values) { p.clear(); }
     }
 
@@ -1022,14 +1074,14 @@ struct PlaySlots {
     const auto [leftOpponentId, rightOpponentId] = getOpponentIds();
     if (playerId == ctx().myPlayerId) {
         const auto cardCount = std::max<std::size_t>(1, std::size(ctx().myPlayer().hand));
-        const auto totalWidth = (static_cast<float>(cardCount) - 1.f) * CardOverlapX + CardWidth;
+        const auto totalWidth = (static_cast<float>(cardCount) - 1.f) * handCardGapX(cardCount) + CardWidth;
         return r::Vector2{(VirtualW - totalWidth) * 0.5f, VirtualH - CardHeight - MyCardBorderMarginY};
     }
     const auto isRight = playerId == rightOpponentId;
     const auto isLeft = playerId == leftOpponentId;
     if (not isLeft and not isRight) { return std::nullopt; }
     const auto cardCount = std::max(1, isRight ? ctx().rightCardCount : ctx().leftCardCount);
-    const auto totalHeight = (static_cast<float>(cardCount) - 1.f) * CardOverlapY + CardHeight;
+    const auto totalHeight = (static_cast<float>(cardCount) - 1.f) * handCardGapY(static_cast<std::size_t>(cardCount)) + CardHeight;
     const auto x = isRight ? VirtualW - CardWidth - CardBorderMargin : CardBorderMargin;
     const auto y = (VirtualH - totalHeight) * 0.5f;
     return r::Vector2{x, y};
@@ -1494,14 +1546,30 @@ auto handlePlayerLeft(const Message& msg) -> void
 {
     const auto playerLeft = makeMethod<PlayerLeft>(msg);
     if (not playerLeft) { return; }
-    PREF_I("playerId: {}", playerLeft->player_id());
-    ctx().players.erase(std::string{playerLeft->player_id()});
+    const auto playerId = std::string{playerLeft->player_id()};
+    PREF_DI(playerId);
+    if (ctx().isGameStarted) {
+        ctx().playerLeftPopUp.isVisible = true;
+        ctx().playerLeftPopUp.playerName = std::move(ctx().player(playerId).name);
+        ctx().playerLeftPopUp.visibleUntil = ctx().window.GetTime() + 3.0; // show for 3s
+    }
+    ctx().players.erase(playerId);
     syncAudioPeers();
+}
+
+[[nodiscard]] auto isGame(const std::string_view b) -> bool
+{
+    return rng::any_of(players(), [b](const std::string_view bid) { return bid.contains(b); }, &Player::bid);
 }
 
 [[nodiscard]] auto isMiser() -> bool
 {
-    return rng::any_of(players(), [](const std::string_view bid) { return bid.contains(PREF_MIS); }, &Player::bid);
+    return isGame(PREF_MIS);
+}
+
+[[nodiscard]] auto isTenGame() -> bool
+{
+    return isGame(PREF_TEN);
 }
 
 auto handleForehand(const Message& msg) -> void
@@ -1786,13 +1854,18 @@ auto handleDealFinished(const Message& msg) -> void
         })) | rng::to<std::map>}};
     })) | rng::to<ScoreSheet>; // clang-format on
     if (not std::empty(ctx().myPlayer().hand)) { ctx().scoreSheet.isVisible = true; }
+    const auto overGame = [] {
+        ctx().clear();
+        ctx().scoreSheet.clear();
+        ctx().isGameStarted = false;
+        if (ctx().areAllPlayersJoined()) { ctx().startGameButton.isVisible = true; }
+    };
     if (isGameOver) {
-        waitFor(10s, [] {
-            ctx().clear();
-            ctx().scoreSheet.clear();
-            ctx().isGameStarted = false;
-            if (ctx().areAllPlayersJoined()) { ctx().startGameButton.isVisible = true; }
-        });
+        if (ctx().areAllPlayersJoined()) {
+            waitFor(10s, overGame);
+        } else {
+            overGame();
+        }
     }
 }
 
@@ -2192,36 +2265,278 @@ auto drawSpeechBubbleText(r::Vector2 p3, const std::string& text, const DrawPosi
     ctx().fontM.DrawText(text.c_str(), {rect.x + padding, rect.y + padding}, fontSize, FontSpacing, colorText);
 }
 
-auto drawWelcomeScreen() -> void
+auto drawWelcomeScreen() -> float
 {
-    if (ctx().isGameStarted) { return; }
+    if (ctx().isGameStarted) { return {}; }
     const auto title = ctx().localizeText(GameText::Preferans);
     const auto textSize = ctx().fontL.MeasureText(title, ctx().fontSizeL(), FontSpacing);
     const auto x = (VirtualW - textSize.x) * 0.5f;
     const auto y = VirtualH / 54.f;
     ctx().fontL.DrawText(title, {x, y}, ctx().fontSizeL(), FontSpacing, getGuiColor(LABEL, TEXT_COLOR_NORMAL));
+    return y + textSize.y;
+}
+
+auto drawAgreements(const float reservedTop) -> void
+{
+    if (not ctx().isLoggedIn or ctx().isGameStarted) { return; }
+    withGuiFont(ctx().fontS, [&] {
+        const auto agreement = [](const GameText name, const GameText value, const GameText tooltip) {
+            return std::tuple{ctx().localizeText(name), ctx().localizeText(value), ctx().localizeText(tooltip)};
+        };
+        const auto agreementsGroupBoxText = ctx().localizeText(GameText::Agreements);
+        const auto agreements = std::array{
+            agreement(GameText::Variant, GameText::Sochi, GameText::TooltipVariant),
+            agreement(GameText::PoolLength, GameText::Ten, GameText::TooltipPoolLength),
+            agreement(GameText::Stalingrad, GameText::Yes, GameText::TooltipStalingrad),
+            agreement(GameText::TenGame, GameText::Checked, GameText::TooltipTenGame),
+            agreement(GameText::Whist, GameText::ResponsibleGreedy, GameText::TooltipWhist),
+            agreement(GameText::PassHalfWhistWhist, GameText::Yes, GameText::TooltipPassHalfWhistWhist),
+            agreement(GameText::WhistPassHalfWhist, GameText::No, GameText::TooltipWhistPassHalfWhist),
+            agreement(GameText::Consolation, GameText::Yes, GameText::TooltipConsolation),
+            agreement(GameText::DownThree, GameText::Yes, GameText::TooltipDownThree),
+            agreement(GameText::TalonBonus, GameText::No, GameText::TooltipTalonBonus),
+            agreement(GameText::TalonOnPassing, GameText::Reveals, GameText::TooltipTalonOnPassing),
+            agreement(GameText::SlidingPassing, GameText::Yes, GameText::TooltipSlidingPassing),
+            agreement(GameText::PassingProgression, GameText::Arithmetic123, GameText::TooltipPassingProgression),
+            agreement(GameText::EndThePassing, GameText::SevenPlayed, GameText::TooltipEndThePassing),
+            agreement(GameText::GamesWithoutTalon, GameText::Yes, GameText::TooltipGamesWithoutTalon)};
+
+        auto nameTextWidth = 0.f;
+        auto valueTextWidth = 0.f;
+        for (const auto& [name, value, tooltipText] : agreements) {
+            nameTextWidth = std::max(nameTextWidth, static_cast<float>(GetTextWidth(name.c_str())));
+            valueTextWidth = std::max(valueTextWidth, static_cast<float>(GetTextWidth(value.c_str())));
+        }
+
+        const auto labelHorizontalPadding
+            = 2.f * static_cast<float>(GuiGetStyle(LABEL, BORDER_WIDTH) + GuiGetStyle(LABEL, TEXT_PADDING)) + 2.f;
+        static constexpr auto pad = 24.f;
+        const auto nameLabelWidth = nameTextWidth + labelHorizontalPadding;
+        const auto valueLabelWidth = valueTextWidth + labelHorizontalPadding;
+        const auto groupBoxWidth = pad + nameLabelWidth + pad + valueLabelWidth + pad;
+        static constexpr auto groupBoxHeight = pad * static_cast<float>(agreements.size() + 2);
+        static const auto availableHeight = VirtualH - reservedTop;
+        static const auto anchor = r::Vector2{BorderMargin, reservedTop + (availableHeight - groupBoxHeight) * 0.5f};
+        const auto valueColumnX = anchor.x + pad + nameLabelWidth + pad;
+        const auto mousePos = r::Mouse::GetPosition();
+        auto isTooltipVisible = false;
+        auto hoveredTooltipText = std::string{};
+
+        GuiGroupBox(
+            r::Rectangle{anchor.x + 0, anchor.y + 0, groupBoxWidth, groupBoxHeight}, agreementsGroupBoxText.c_str());
+        for (auto&& [i, agr] : agreements | rv::enumerate) {
+            auto&& [name, value, tooltipText] = agr;
+            const auto y = anchor.y + pad * static_cast<float>(i + 1);
+            const auto rowRect = r::Rectangle{anchor.x + pad, y, groupBoxWidth - pad * 2.f, pad};
+            const auto nameLabelRect = r::Rectangle{anchor.x + pad, y, nameLabelWidth, pad};
+            const auto valueLabelRect = r::Rectangle{valueColumnX, y, valueLabelWidth, pad};
+            const auto isRowHovered = mousePos.CheckCollision(rowRect);
+            withGuiStyle(
+                LABEL,
+                TEXT_COLOR_NORMAL,
+                GuiGetStyle(LABEL, isRowHovered ? TEXT_COLOR_FOCUSED : TEXT_COLOR_DISABLED),
+                [&] { GuiLabel(nameLabelRect, name.data()); });
+            withGuiStyle(
+                LABEL,
+                TEXT_COLOR_NORMAL,
+                GuiGetStyle(LABEL, isRowHovered ? TEXT_COLOR_FOCUSED : TEXT_COLOR_DISABLED),
+                [&] { GuiLabel(valueLabelRect, value.data()); });
+            isTooltipVisible = isTooltipVisible or isRowHovered;
+            if (isRowHovered) { hoveredTooltipText = tooltipText; }
+        }
+
+        if (isTooltipVisible) {
+            static constexpr auto tooltipPadding = 8.f;
+            static constexpr auto tooltipShift = 12.f;
+            static constexpr auto tooltipMargin = 4.f;
+            const auto tooltipTextSize = measureGuiText(hoveredTooltipText);
+            const auto tooltipRect = r::Rectangle{
+                std::min(
+                    mousePos.x + tooltipShift, VirtualW - tooltipTextSize.x - tooltipPadding * 2.f - tooltipMargin),
+                std::min(
+                    mousePos.y + tooltipShift, VirtualH - tooltipTextSize.y - tooltipPadding * 2.f - tooltipMargin),
+                tooltipTextSize.x + tooltipPadding * 2.f,
+                tooltipTextSize.y + tooltipPadding * 2.f,
+            };
+            drawRectangleWithBorder(tooltipRect, getGuiColor(BASE_COLOR_NORMAL), getGuiColor(BORDER_COLOR_NORMAL));
+            ctx().fontS.DrawText(
+                hoveredTooltipText.c_str(),
+                {tooltipRect.x + tooltipPadding, tooltipRect.y + tooltipPadding},
+                ctx().fontSizeS(),
+                FontSpacing,
+                getGuiColor(LABEL, TEXT_COLOR_NORMAL));
+        }
+    });
 }
 
 // TODO: support text input for mobile devices
 auto drawLoginScreen() -> void
 {
     if (ctx().isLoggedIn or ctx().isLoginInProgress) { return; }
+
+    enum class LoginInputField {
+        login,
+        password,
+    };
+
+    static const auto screenCenter = r::Vector2{VirtualW, VirtualH} * 0.5f;
+    static constexpr auto keyButtonSize = 110.f;
+    static constexpr auto keyButtonW = keyButtonSize;
+    static constexpr auto keyButtonH = keyButtonSize;
+    static constexpr auto keyGap = BorderMargin / 5.f;
+    static constexpr auto wideKeyButtonW = keyButtonSize * 1.5f;
+    static constexpr auto spaceKeyButtonW = keyButtonSize * 3.f;
+    static constexpr auto keyboardWidth = keyButtonW * 10.f + keyGap * 9.f;
+    const auto keyboardStartX = screenCenter.x - keyboardWidth * 0.5f;
     static constexpr auto boxWidth = VirtualW / 5.f;
     static constexpr auto boxHeight = RAYGUI_TEXTINPUTBOX_HEIGHT;
     static constexpr auto textInputBoxWidth = boxWidth + RAYGUI_TEXTINPUTBOX_BUTTON_PADDING * 2.f;
     static constexpr auto textInputBoxHeight = boxHeight * 4.5f;
     static constexpr auto maxLengthPassword = 27;
     static constexpr auto maxLengthName = 11;
-    static const auto screenCenter = r::Vector2{VirtualW, VirtualH} * 0.5f;
+    static const auto loginBoxPos = r::Vector2{screenCenter.x - boxWidth * 0.5f, screenCenter.y - boxHeight * 1.5f};
+    static const auto loginInputBox = r::Rectangle{loginBoxPos, {boxWidth, boxHeight}};
     static const auto textInputBox = r::Rectangle{
         screenCenter.x - textInputBoxWidth * 0.5f,
         screenCenter.y - textInputBoxHeight * 0.5f,
         textInputBoxWidth,
         textInputBoxHeight};
+    static constexpr auto keyboardOffsetY = 16.f;
+    const auto keyboardStartY = textInputBox.y + textInputBox.height + keyboardOffsetY;
 
+    static bool isCapsLockEnabled = false;
+    const auto drawLoginButton = [](const float x, const float y, const float w, const float h, const char* text) {
+        return GuiButton(r::Rectangle{x, y, w, h}, text);
+    };
+    const auto getKeyLabel = [&](const char letter) {
+        return std::string(1, isCapsLockEnabled ? static_cast<char>(std::toupper(static_cast<unsigned char>(letter))) : letter);
+    };
+    const auto currentTextLength = [](const std::string& buffer) {
+        return std::strlen(buffer.c_str());
+    };
+    const auto appendCharacter = [&](std::string& buffer, const char ch) {
+        const auto len = currentTextLength(buffer);
+        if (len + 1 >= buffer.size()) { return; }
+        buffer[len] = ch;
+        buffer[len + 1] = '\0';
+    };
+    const auto eraseCharacter = [&](std::string& buffer) {
+        const auto len = currentTextLength(buffer);
+        if (len == 0) { return; }
+        buffer[len - 1] = '\0';
+    };
+    const auto row1Y = keyboardStartY;
+    const auto row2Y = keyboardStartY + keyButtonH + keyGap;
+    const auto row3Y = keyboardStartY + (keyButtonH + keyGap) * 2.f;
+    const auto row4Y = keyboardStartY + (keyButtonH + keyGap) * 3.f;
+    const auto qLabel = getKeyLabel('q');
+    const auto wLabel = getKeyLabel('w');
+    const auto eLabel = getKeyLabel('e');
+    const auto rLabel = getKeyLabel('r');
+    const auto tLabel = getKeyLabel('t');
+    const auto yLabel = getKeyLabel('y');
+    const auto uLabel = getKeyLabel('u');
+    const auto iLabel = getKeyLabel('i');
+    const auto oLabel = getKeyLabel('o');
+    const auto pLabel = getKeyLabel('p');
+    const auto aLabel = getKeyLabel('a');
+    const auto sLabel = getKeyLabel('s');
+    const auto dLabel = getKeyLabel('d');
+    const auto fLabel = getKeyLabel('f');
+    const auto gLabel = getKeyLabel('g');
+    const auto hLabel = getKeyLabel('h');
+    const auto jLabel = getKeyLabel('j');
+    const auto kLabel = getKeyLabel('k');
+    const auto lLabel = getKeyLabel('l');
+    const auto zLabel = getKeyLabel('z');
+    const auto xLabel = getKeyLabel('x');
+    const auto cLabel = getKeyLabel('c');
+    const auto vLabel = getKeyLabel('v');
+    const auto bLabel = getKeyLabel('b');
+    const auto nLabel = getKeyLabel('n');
+    const auto mLabel = getKeyLabel('m');
     static auto passwordBuffer = std::string{};
     passwordBuffer.resize(maxLengthPassword);
     static bool passwordViewActive = false;
+    static auto loginEditMode = true;
+    static auto loginBuffer = ctx().myPlayerName;
+    loginBuffer.resize(maxLengthName);
+    static auto activeField = LoginInputField::login;
+    const auto shouldDrawVirtualKeyboard = ctx().virtualKeyboard.isVisible;
+    const auto passwordMessageInputHeight = textInputBox.height - static_cast<float>(RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT)
+        - static_cast<float>(GuiGetStyle(STATUSBAR, BORDER_WIDTH))
+        - static_cast<float>(RAYGUI_TEXTINPUTBOX_BUTTON_HEIGHT)
+        - 2.f * RAYGUI_TEXTINPUTBOX_BUTTON_PADDING;
+    const auto passwordInputBox = r::Rectangle{
+        textInputBox.x + RAYGUI_TEXTINPUTBOX_BUTTON_PADDING,
+        textInputBox.y + RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT - RAYGUI_TEXTINPUTBOX_HEIGHT / 2.f
+            + (passwordMessageInputHeight / 2.f + passwordMessageInputHeight / 4.f),
+        textInputBox.width - RAYGUI_TEXTINPUTBOX_BUTTON_PADDING * 2.f,
+        RAYGUI_TEXTINPUTBOX_HEIGHT};
+    auto& activeBuffer = activeField == LoginInputField::login ? loginBuffer : passwordBuffer;
+    const auto handleVirtualKey = [&](const char baseLetter) {
+        auto ch = baseLetter;
+        if (isCapsLockEnabled) { ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch))); }
+        appendCharacter(activeBuffer, ch);
+        isCapsLockEnabled = false;
+    };
+
+    if (shouldDrawVirtualKeyboard) {
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 0.f, row1Y, keyButtonW, keyButtonH, qLabel.c_str())) { handleVirtualKey('q'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 1.f, row1Y, keyButtonW, keyButtonH, wLabel.c_str())) { handleVirtualKey('w'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 2.f, row1Y, keyButtonW, keyButtonH, eLabel.c_str())) { handleVirtualKey('e'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 3.f, row1Y, keyButtonW, keyButtonH, rLabel.c_str())) { handleVirtualKey('r'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 4.f, row1Y, keyButtonW, keyButtonH, tLabel.c_str())) { handleVirtualKey('t'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 5.f, row1Y, keyButtonW, keyButtonH, yLabel.c_str())) { handleVirtualKey('y'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 6.f, row1Y, keyButtonW, keyButtonH, uLabel.c_str())) { handleVirtualKey('u'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 7.f, row1Y, keyButtonW, keyButtonH, iLabel.c_str())) { handleVirtualKey('i'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 8.f, row1Y, keyButtonW, keyButtonH, oLabel.c_str())) { handleVirtualKey('o'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 9.f, row1Y, keyButtonW, keyButtonH, pLabel.c_str())) { handleVirtualKey('p'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 0.5f, row2Y, keyButtonW, keyButtonH, aLabel.c_str())) { handleVirtualKey('a'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 1.5f, row2Y, keyButtonW, keyButtonH, sLabel.c_str())) { handleVirtualKey('s'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 2.5f, row2Y, keyButtonW, keyButtonH, dLabel.c_str())) { handleVirtualKey('d'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 3.5f, row2Y, keyButtonW, keyButtonH, fLabel.c_str())) { handleVirtualKey('f'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 4.5f, row2Y, keyButtonW, keyButtonH, gLabel.c_str())) { handleVirtualKey('g'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 5.5f, row2Y, keyButtonW, keyButtonH, hLabel.c_str())) { handleVirtualKey('h'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 6.5f, row2Y, keyButtonW, keyButtonH, jLabel.c_str())) { handleVirtualKey('j'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 7.5f, row2Y, keyButtonW, keyButtonH, kLabel.c_str())) { handleVirtualKey('k'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 8.5f, row2Y, keyButtonW, keyButtonH, lLabel.c_str())) { handleVirtualKey('l'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 1.5f, row3Y, keyButtonW, keyButtonH, zLabel.c_str())) { handleVirtualKey('z'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 2.5f, row3Y, keyButtonW, keyButtonH, xLabel.c_str())) { handleVirtualKey('x'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 3.5f, row3Y, keyButtonW, keyButtonH, cLabel.c_str())) { handleVirtualKey('c'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 4.5f, row3Y, keyButtonW, keyButtonH, vLabel.c_str())) { handleVirtualKey('v'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 5.5f, row3Y, keyButtonW, keyButtonH, bLabel.c_str())) { handleVirtualKey('b'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 6.5f, row3Y, keyButtonW, keyButtonH, nLabel.c_str())) { handleVirtualKey('n'); }
+        if (drawLoginButton(keyboardStartX + (keyButtonW + keyGap) * 7.5f, row3Y, keyButtonW, keyButtonH, mLabel.c_str())) { handleVirtualKey('m'); }
+        if (withGuiState(STATE_PRESSED, isCapsLockEnabled, [&] {
+                return drawLoginButton(
+                    keyboardStartX + (keyButtonW + keyGap) * 2.f,
+                    row4Y,
+                    wideKeyButtonW + (keyGap * .5f),
+                    keyButtonH,
+                    "⇪");
+            })) {
+            isCapsLockEnabled = not isCapsLockEnabled;
+        }
+        if (drawLoginButton(
+                keyboardStartX + (keyButtonW + keyGap) * 3.5f,
+                row4Y,
+                spaceKeyButtonW + (keyGap * 2.f),
+                keyButtonH,
+                "␣")) {
+            appendCharacter(activeBuffer, ' ');
+            isCapsLockEnabled = false;
+        }
+        if (drawLoginButton(
+                keyboardStartX + (keyButtonW + keyGap) * 6.5f,
+                row4Y,
+                wideKeyButtonW + (keyGap * .5f),
+                keyButtonH,
+                "⌫")) {
+            eraseCharacter(activeBuffer);
+            isCapsLockEnabled = false;
+        }
+    }
 
     const auto clicked = withGuiFont(ctx().fontS, [&] {
         const auto loginText = ctx().localizeText(GameText::Login);
@@ -2236,15 +2551,10 @@ auto drawLoginScreen() -> void
             &passwordViewActive);
     });
 
-    static const auto loginBoxPos = r::Vector2{screenCenter.x - boxWidth * 0.5f, screenCenter.y - boxHeight * 1.5f};
-    static const auto loginInputBox = r::Rectangle{loginBoxPos, {boxWidth, boxHeight}};
-    static auto loginEditMode = true;
-    static auto loginBuffer = ctx().myPlayerName;
-    loginBuffer.resize(maxLengthName);
     if (withGuiFont(ctx().fontS, [&] {
             return GuiTextBox(loginInputBox, std::data(loginBuffer), maxLengthName, loginEditMode);
         })) {
-        loginEditMode = false;
+        loginEditMode = not loginEditMode;
     }
 
     // hide x button
@@ -2255,8 +2565,15 @@ auto drawLoginScreen() -> void
         RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT - 4}
         .Draw(getGuiColor(BUTTON, BASE_COLOR_NORMAL));
 
-    if (r::Mouse::IsButtonPressed(MOUSE_LEFT_BUTTON) and r::Mouse::GetPosition().CheckCollision(loginInputBox)) {
+    if (shouldDrawVirtualKeyboard and r::Mouse::IsButtonPressed(MOUSE_LEFT_BUTTON)
+        and r::Mouse::GetPosition().CheckCollision(loginInputBox)) {
         loginEditMode = true;
+        activeField = LoginInputField::login;
+    } else if (
+        shouldDrawVirtualKeyboard and r::Mouse::IsButtonPressed(MOUSE_LEFT_BUTTON)
+        and r::Mouse::GetPosition().CheckCollision(passwordInputBox)) {
+        loginEditMode = false;
+        activeField = LoginInputField::password;
     }
     if ((1 == clicked or r::Keyboard::IsKeyPressed(KEY_ENTER))
                     and ((std::strlen(loginBuffer.c_str()) != 0 and std::strlen(passwordBuffer.c_str()) != 0)
@@ -2311,17 +2628,39 @@ auto drawLogoutMessage() -> void
         removeFromLocalStoragePlayerId();
         removeFromLocalStorageAuthToken();
         ctx().isLoggedIn = false;
+        ctx().clear();
+        ctx().scoreSheet.clear();
+        ctx().isGameStarted = false;
         teardownAudioEngine();
         emscripten_websocket_close(ctx().ws, 1000, "Logout");
     }
     ctx().logoutMessage.isVisible = false;
 }
 
+auto drawPlayerLeftPopUp() -> void
+{
+    if (r::Keyboard::IsKeyPressed(KEY_ENTER)) { ctx().playerLeftPopUp.isVisible = false; }
+    if (not isVisible(ctx().playerLeftPopUp) or not ctx().isLoggedIn) { return; }
+    if (ctx().window.GetTime() >= ctx().playerLeftPopUp.visibleUntil) {
+        ctx().playerLeftPopUp.clear();
+        return;
+    }
+    const auto title = ctx().localizeText(GameText::GameOver);
+    const auto message
+        = fmt::format("{} {}", ctx().playerLeftPopUp.playerName, ctx().localizeText(GameText::PlayerLeftTheGame));
+    if (PREF_NO_CLICK
+        == drawMessageBox({VirtualW * 0.5f, VirtualH * 0.23f}, title, message, ctx().localizeText(GameText::Ok))) {
+        return;
+    }
+    ctx().playerLeftPopUp.clear();
+}
+
 auto drawTalonDiscardPopUp() -> void
 {
     if (not ctx().talonDiscardPopUp.isVisible) { return; }
     const auto title = ctx().localizeText(GameText::ConfirmTitle);
-    const auto message = ctx().localizeText(GameText::DiscardSelectedCards);
+    const auto message = ctx().talonDiscardPopUp.isDownThreeTricks ? ctx().localizeText(GameText::GoDownThreeTricks)
+                                                                   : ctx().localizeText(GameText::DiscardSelectedCards);
     const auto buttons = std::format(
         "{};{}", //
         ctx().localizeText(GameText::Yes),
@@ -2329,17 +2668,23 @@ auto drawTalonDiscardPopUp() -> void
     const auto clicked = drawMessageBox({VirtualW * 0.5f, VirtualH * 0.45f}, title, message, buttons);
     if (clicked == PREF_NO_CLICK) { return; }
     if (clicked == PREF_OK_CLICK) {
-        removeCardsFromHand(ctx().myPlayer(), ctx().discardedTalon);
-        if (const auto isSixSpade = ctx().bidding.rank == 0; isSixSpade) {
-            ctx().bidding.rank = AllRanks;
-        } else if (const auto isNotAllPassed = ctx().bidding.rank != AllRanks; isNotAllPassed) {
-            --ctx().bidding.rank;
+        if (ctx().talonDiscardPopUp.isDownThreeTricks) {
+            ctx().myPlayer().bid = PREF_PASS;
+            sendDiscardTalon(PREF_PASS);
+        } else {
+            removeCardsFromHand(ctx().myPlayer(), ctx().discardedTalon);
+            if (const auto isSixSpade = ctx().bidding.rank == 0; isSixSpade) {
+                ctx().bidding.rank = AllRanks;
+            } else if (const auto isNotAllPassed = ctx().bidding.rank != AllRanks; isNotAllPassed) {
+                --ctx().bidding.rank;
+            }
+            ctx().bidding.isVisible = true;
         }
-        ctx().bidding.isVisible = true;
     } else {
-        ctx().discardedTalon.clear();
+        if (not ctx().talonDiscardPopUp.isDownThreeTricks) { ctx().discardedTalon.clear(); }
     }
     ctx().talonDiscardPopUp.isVisible = false;
+    ctx().talonDiscardPopUp.isDownThreeTricks = false;
 }
 
 [[maybe_unused]] auto drawMessageBox(
@@ -2438,19 +2783,19 @@ auto drawConnectedPlayers() -> void
 
     // FIXME: After reconnection, startGameButton is incorectly always visible
     if (ctx().startGameButton.isVisible
-        and GuiButton(
+        and (r::Keyboard::IsKeyPressed(KEY_ENTER) or GuiButton(
             {(VirtualW * 0.5f) - (buttonW * 0.5f), buttonY, buttonW, buttonH},
-            ctx().localizeText(GameText::PLAY).c_str())) {
+            ctx().localizeText(GameText::PLAY).c_str()))) {
         sendReadyCheck(ReadyCheckState::REQUESTED);
         startReadyCheck(ctx().myPlayerId);
         return;
     }
     if (not ctx().readyCheckPopUp.isVisible) { return; }
-    const auto isAccepted
-        = GuiButton({startX, buttonY, acceptDenyButtonsW, buttonH}, ctx().localizeText(GameText::ACCEPT).c_str());
-    const auto isDeclined = GuiButton(
-        {startX + acceptDenyButtonsW + fontSpacingX, buttonY, acceptDenyButtonsW, buttonH},
-        ctx().localizeText(GameText::DECLINE).c_str());
+    const auto isAccepted = r::Keyboard::IsKeyPressed(KEY_ENTER)
+        or GuiButton({startX, buttonY, acceptDenyButtonsW, buttonH}, ctx().localizeText(GameText::ACCEPT).c_str());
+    const auto isDeclined = r::Keyboard::IsKeyPressed(KEY_ESCAPE)
+        or GuiButton({startX + acceptDenyButtonsW + fontSpacingX, buttonY, acceptDenyButtonsW, buttonH},
+                     ctx().localizeText(GameText::DECLINE).c_str());
     if (not isAccepted and not isDeclined) { return; }
     ctx().readyCheckPopUp.isVisible = false;
     ctx().myPlayer().readyCheckState = (isAccepted) //
@@ -2540,15 +2885,19 @@ auto drawCards(const r::Vector2 pos, Player& player, const Shift shift) -> void
         and not ctx().bidding.isVisible
         and not ctx().cardsOnTable.contains(player.id)) {
         const auto handSize = static_cast<float>(std::size(player.hand));
+        const auto cardGapX = handCardGapX(std::size(player.hand));
+        const auto cardGapY = handCardGapY(std::size(player.hand));
         const auto cardsRect = hasShift(shift, Horizont)
-            ? r::Rectangle{pos.x, pos.y, (handSize - 1.f) * CardOverlapX + CardWidth, CardHeight}
-            : r::Rectangle{pos.x, pos.y, CardWidth, (handSize - 1.f) * CardOverlapY + CardHeight};
+            ? r::Rectangle{pos.x, pos.y, (handSize - 1.f) * cardGapX + CardWidth, CardHeight}
+            : r::Rectangle{pos.x, pos.y, CardWidth, (handSize - 1.f) * cardGapY + CardHeight};
         drawHandTurnAura(cardsRect);
     }
     const auto mousePos = r::Mouse::GetPosition();
+    const auto cardGapX = handCardGapX(std::size(player.hand));
+    const auto cardGapY = handCardGapY(std::size(player.hand));
     const auto toPos = [&](const auto i, const float offset = 0.f) {
-        return hasShift(shift, Horizont) ? r::Vector2{pos.x + static_cast<float>(i) * CardOverlapX, pos.y + offset}
-                                         : r::Vector2{pos.x + offset, pos.y + static_cast<float>(i) * CardOverlapY};
+        return hasShift(shift, Horizont) ? r::Vector2{pos.x + static_cast<float>(i) * cardGapX, pos.y + offset}
+                                         : r::Vector2{pos.x + offset, pos.y + static_cast<float>(i) * cardGapY};
     };
     const auto hoveredIndex = std::invoke([&] {
         auto reversed = rv::iota(0, std::ssize(player.hand)) | rv::reverse;
@@ -2604,7 +2953,8 @@ auto drawBackCard(const float x, const float y) -> void
 
 auto drawBackCards(const int cardCount, const r::Vector2& pos) -> void
 {
-    for (auto i = 0; i < cardCount; ++i) { drawBackCard(pos.x, pos.y + static_cast<float>(i) * CardOverlapY); }
+    const auto cardGapY = handCardGapY(static_cast<std::size_t>(std::max(1, cardCount)));
+    for (auto i = 0; i < cardCount; ++i) { drawBackCard(pos.x, pos.y + static_cast<float>(i) * cardGapY); }
 }
 
 auto drawCards(const r::Vector2& pos, Player& player, const Shift shift, const int cardCount) -> void
@@ -2775,6 +3125,10 @@ auto drawOfferButton() -> void
             if (player.whistingChoice == PREF_PASS) { return PREF_TRUST; }
             if (player.whistingChoice == PREF_WHIST) { return PREF_CATCH; };
         }
+        if (isTenGame()) {
+            if (player.whistingChoice == PREF_PASS) { return PREF_TRUST; }
+            if (player.whistingChoice == PREF_WHIST) { return PREF_CHECK; };
+        }
         return player.whistingChoice;
     });
     return drawGameText(pos, ctx().localizeText(whistingChoiceToGameText(choice)), shift).first;
@@ -2817,7 +3171,7 @@ auto drawMyHand() -> void
     using enum DrawPosition;
     auto& player = ctx().myPlayer();
     const auto cardCount = std::ssize(player.hand);
-    const auto totalWidth = (static_cast<float>(cardCount) - 1.f) * CardOverlapX + CardWidth;
+    const auto totalWidth = (static_cast<float>(cardCount) - 1.f) * handCardGapX(std::size(player.hand)) + CardWidth;
     const auto cardFirstLeftTopPos
         = r::Vector2{(VirtualW - totalWidth) * 0.5f, VirtualH - CardHeight - MyCardBorderMarginY};
     const auto cardCenterY = cardFirstLeftTopPos.y + CardHeight * 0.5f;
@@ -2859,7 +3213,7 @@ auto drawOpponentHand(const DrawPosition drawPosition) -> void
     });
     auto& player = ctx().player(playerId);
     const auto cardCount = pref::cardCount(player.hand, drawPosition);
-    const auto totalHeight = (static_cast<float>(cardCount) - 1.f) * CardOverlapY + CardHeight;
+    const auto totalHeight = (static_cast<float>(cardCount) - 1.f) * handCardGapY(static_cast<std::size_t>(cardCount)) + CardHeight;
     const auto cardFirstLeftTopPos = r::Vector2{
         isRight(drawPosition) ? VirtualW - CardWidth - CardBorderMargin : CardBorderMargin,
         (VirtualH - totalHeight) * 0.5f};
@@ -3164,7 +3518,7 @@ auto drawWhistingOrMiserMenu() -> void
         const auto choice = localizeText(buttonName, GameLang::English);
         ctx().whisting.choice = std::invoke([&] {
             if (choice == PREF_TRUST) { return std::string{PREF_PASS}; }
-            if (choice == PREF_CATCH) { return std::string{PREF_WHIST}; }
+            if (choice == PREF_CATCH or choice == PREF_CHECK) { return std::string{PREF_WHIST}; }
             return std::string{choice};
         });
         ctx().myPlayer().whistingChoice = ctx().whisting.choice;
@@ -3172,6 +3526,8 @@ auto drawWhistingOrMiserMenu() -> void
     };
     if (isMiser()) {
         drawMenu(MiserButtons, ctx().whisting.isVisible, click, checkHalfWhist);
+    } else if (isTenGame()) {
+        drawMenu(TenGameButtons, ctx().whisting.isVisible, click, checkHalfWhist);
     } else {
         drawMenu(WhistingButtons, ctx().whisting.isVisible, click, checkHalfWhist);
     }
@@ -3245,12 +3601,17 @@ auto handleTalonCardClick(std::list<const Card*>& hand) -> void
         if (const auto selectedIt = rng::find(ctx().discardedTalon, cardName);
             selectedIt != rng::end(ctx().discardedTalon)) {
             ctx().discardedTalon.erase(selectedIt);
-            if (std::size(ctx().discardedTalon) < 2) { ctx().talonDiscardPopUp.isVisible = false; }
+            if (std::size(ctx().discardedTalon) < 2 and not ctx().talonDiscardPopUp.isDownThreeTricks) {
+                ctx().talonDiscardPopUp.isVisible = false;
+            }
             return;
         }
         if (std::size(ctx().discardedTalon) >= 2) { return; }
         ctx().discardedTalon.push_back(cardName);
-        if (std::size(ctx().discardedTalon) == 2) { ctx().talonDiscardPopUp.isVisible = true; }
+        if (std::size(ctx().discardedTalon) == 2) {
+            ctx().talonDiscardPopUp.isVisible = true;
+            ctx().talonDiscardPopUp.isDownThreeTricks = false;
+        }
     }
 }
 
@@ -3290,7 +3651,7 @@ auto handleCardClick(
     const auto cyrillic = rv::closed_iota(0x0410, 0x044F); // А..я
     const auto extras = makeCodepoints( // clang-format off
         "Ё", "ё", "Ґ", "ґ", "Є", "є", "І", "і", "Ї", "ї", "è", "é",
-        "♠", "♣", "♦", "♥", "’", "—",
+        "♠", "♣", "♦", "♥", "’", "—", "⌫", "⇪", "␣",
         PREF_SPADE, PREF_CLUB, PREF_HEART, PREF_DIAMOND, PREF_ARROW_RIGHT, PREF_FOREHAND_SIGN,
         PREF_NUMBER_01, PREF_NUMBER_02, PREF_NUMBER_03, PREF_NUMBER_04, PREF_NUMBER_05,
         PREF_NUMBER_06, PREF_NUMBER_07, PREF_NUMBER_08, PREF_NUMBER_09, PREF_NUMBER_10
@@ -3316,10 +3677,12 @@ auto handleCardClick(
         SpeechBubbleIcon,
         OverallScoreboardIcon,
         LadderIcon,
+        StatIcon,
         LogoutIcon,
         HandshakeIcon,
         MicOnIcon,
-        MicOffIcon);
+        MicOffIcon,
+        KeyboardIcon);
 }
 
 [[nodiscard]] auto makeAwesomeLargeCodepoints()
@@ -3450,6 +3813,12 @@ auto drawSettingsButton() -> void
     drawMenuButton(ctx().settingsMenu, 2, SettingsIcon);
 }
 
+auto drawVirtualKeyboardButton() -> void
+{
+    if (ctx().isLoggedIn or ctx().isLoginInProgress) { return; }
+    drawMenuButton(ctx().virtualKeyboard, 3, KeyboardIcon);
+}
+
 auto drawOverallScoreboardButton() -> void
 {
     drawMenuButton(ctx().overallScoreboard, 3, OverallScoreboardIcon);
@@ -3463,6 +3832,20 @@ auto drawScoreSheetButton() -> void
 auto drawSpeechBubbleButton() -> void
 {
     drawMenuButton(ctx().speechBubbleMenu, 5, SpeechBubbleIcon);
+}
+
+auto drawGoDownButton() -> void
+{
+    if (ctx().stage != GameStage::TALON_PICKING or not isMyTurn() or isMiser()) { return; }
+    withGuiState(
+        STATE_DISABLED, std::size(ctx().discardedTalon) == 2U or not std::empty(ctx().pendingTalonReveal), [&] {
+            withGuiState(STATE_PRESSED, ctx().talonDiscardPopUp.isVisible, [&] {
+                drawToolbarButton(6, HandshakeIcon, [&] {
+                    ctx().talonDiscardPopUp.isVisible = true;
+                    ctx().talonDiscardPopUp.isDownThreeTricks = true;
+                });
+            });
+        });
 }
 
 auto drawHandshakeOfferButton() -> void
@@ -3487,6 +3870,36 @@ auto drawLogoutButton() -> void
                 ctx().logoutMessage.isVisible = true;
             },
             false);
+    });
+}
+
+auto drawStatButton() -> void
+{
+    withGuiState(STATE_PRESSED, ctx().ladderMenu.isVisible, [&] {
+        drawToolbarButton(
+            2,
+            StatIcon,
+            [&] {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdollar-in-identifier-extension"
+                EM_ASM(
+                    {
+                        const selectedUserId = encodeURIComponent(UTF8ToString($0));
+                        const shouldSelectLatestGame = Boolean($1);
+                        const url = "https://"
+                            + UTF8ToString($2)
+                            + "/prefbuff/?selectedUserId="
+                            + selectedUserId
+                            + (shouldSelectLatestGame ? "&selectLatestGame=1" : "");
+                        window.open(url, "_blank");
+                    },
+                    ctx().myPlayerId.c_str(),
+                    ctx().isGameStarted ? 1 : 0,
+                    PREF_HOST);
+#pragma GCC diagnostic pop
+            },
+            false,
+            true);
     });
 }
 
@@ -3518,12 +3931,64 @@ auto speechBubbleCooldown() -> void
     });
 }
 
-[[nodiscard]] auto isFuzzyMatch(const std::string_view str, const std::string_view pattern) -> bool
+[[nodiscard]] constexpr auto caseFoldCodePoint(const char32_t cp) -> char32_t
 {
-    if (std::empty(pattern) or rng::all_of(pattern, equalTo('\0'))) { return true; }
+    if (cp >= U'A' and cp <= U'Z') { return cp - U'A' + U'a'; }
+    if (cp >= U'\u0410' and cp <= U'\u042F') { return cp - U'\u0410' + U'\u0430'; } // А-Я -> а-я
+    if (cp == U'\u0401') { return U'\u0451'; } // Ё -> ё
+    if (cp == U'\u0404') { return U'\u0454'; } // Є -> є
+    if (cp == U'\u0406') { return U'\u0456'; } // І -> і
+    if (cp == U'\u0407') { return U'\u0457'; } // Ї -> ї
+    if (cp == U'\u0490') { return U'\u0491'; } // Ґ -> ґ
+    return cp;
+}
+
+[[nodiscard]] auto toCaseFoldedCodePoints(const std::string_view text) -> std::vector<char32_t>
+{
+    auto out = std::vector<char32_t>{};
+    out.reserve(std::size(text));
+    const auto* bytes = reinterpret_cast<const unsigned char*>(std::data(text));
     auto i = 0uz;
-    for (char c : str) {
-        if (std::tolower(c) == std::tolower(pattern[i]) and (++i == std::size(pattern))) { return true; }
+    while (i < std::size(text)) {
+        char32_t cp = bytes[i];
+        auto advance = 1uz;
+        if ((bytes[i] & 0xE0) == 0xC0 and i + 1 < std::size(text) and (bytes[i + 1] & 0xC0) == 0x80) {
+            cp = (static_cast<char32_t>(bytes[i] & 0x1F) << 6) | static_cast<char32_t>(bytes[i + 1] & 0x3F);
+            advance = 2;
+        } else if (
+            (bytes[i] & 0xF0) == 0xE0
+            and i + 2 < std::size(text)
+            and (bytes[i + 1] & 0xC0) == 0x80
+            and (bytes[i + 2] & 0xC0) == 0x80) {
+            cp = (static_cast<char32_t>(bytes[i] & 0x0F) << 12)
+                | (static_cast<char32_t>(bytes[i + 1] & 0x3F) << 6)
+                | static_cast<char32_t>(bytes[i + 2] & 0x3F);
+            advance = 3;
+        } else if (
+            (bytes[i] & 0xF8) == 0xF0
+            and i + 3 < std::size(text)
+            and (bytes[i + 1] & 0xC0) == 0x80
+            and (bytes[i + 2] & 0xC0) == 0x80
+            and (bytes[i + 3] & 0xC0) == 0x80) {
+            cp = (static_cast<char32_t>(bytes[i] & 0x07) << 18)
+                | (static_cast<char32_t>(bytes[i + 1] & 0x3F) << 12)
+                | (static_cast<char32_t>(bytes[i + 2] & 0x3F) << 6)
+                | static_cast<char32_t>(bytes[i + 3] & 0x3F);
+            advance = 4;
+        }
+        out.push_back(caseFoldCodePoint(cp));
+        i += advance;
+    }
+    return out;
+}
+
+[[nodiscard]] auto isFuzzyMatch(const std::string_view str, const std::span<const char32_t> patternCodePoints) -> bool
+{
+    if (std::empty(patternCodePoints)) { return true; }
+    const auto strCodePoints = toCaseFoldedCodePoints(str);
+    auto i = 0uz;
+    for (char32_t cp : strCodePoints) {
+        if (cp == patternCodePoints[i] and (++i == std::size(patternCodePoints))) { return true; }
     }
     return false;
 }
@@ -3531,8 +3996,9 @@ auto speechBubbleCooldown() -> void
 [[nodiscard]] auto fuzzySearch(const std::span<const std::string> strings, const std::string_view pattern)
     -> std::vector<std::string>
 {
+    const auto patternCodePoints = toCaseFoldedCodePoints(pattern);
     return strings
-        | rv::filter([pattern](const std::string_view str) { return isFuzzyMatch(str, pattern); })
+        | rv::filter([&patternCodePoints](const std::string_view str) { return isFuzzyMatch(str, patternCodePoints); })
         | rng::to_vector;
 }
 
@@ -4380,10 +4846,10 @@ auto updateDrawFrame([[maybe_unused]] void* ud) -> void
 
     ctx().target.BeginMode();
     ctx().window.ClearBackground(getGuiColor(BACKGROUND_COLOR));
-    drawWelcomeScreen();
+    const auto reservedTop = drawWelcomeScreen();
     drawLoginScreen();
     drawLogoutButton();
-    if (ctx().isLoggedIn and ctx().isGameStarted) {
+    if (ctx().isLoggedIn and ctx().isGameStarted and ctx().areAllPlayersJoined()) {
         drawWhistingOrMiserMenu();
         drawHowToPlayMenu();
         drawBiddingMenu();
@@ -4400,6 +4866,7 @@ auto updateDrawFrame([[maybe_unused]] void* ud) -> void
         drawLastTrickOrTalon();
         drawSpeechBubbleButton();
         drawHandshakeOfferButton();
+        drawGoDownButton();
     } else {
         drawConnectedPlayers();
     }
@@ -4407,15 +4874,19 @@ auto updateDrawFrame([[maybe_unused]] void* ud) -> void
         drawOverallScoreboardButton();
         drawMicButton();
         drawLadderButton();
+        drawStatButton();
     }
     drawSettingsButton();
+    drawVirtualKeyboardButton();
     drawFullScreenButton();
     drawPingAndFps();
-    if (ctx().isGameStarted and ctx().isLoggedIn) { drawSpeechBubbleMenu(); }
+    drawAgreements(reservedTop);
+    if (ctx().isGameStarted and ctx().isLoggedIn and ctx().areAllPlayersJoined()) { drawSpeechBubbleMenu(); }
     if (ctx().isLoggedIn) { drawOverallScoreboard(); }
     if (ctx().isLoggedIn) { drawLadder(); }
     drawSettingsMenu();
     drawLogoutMessage();
+    drawPlayerLeftPopUp();
     ctx().target.EndMode();
     ctx().window.BeginDrawing();
     ctx().window.ClearBackground(getGuiColor(BACKGROUND_COLOR));
@@ -4501,7 +4972,7 @@ int main(const int argc, const char* const argv[])
         ctx.isLoginInProgress = true;
         pref::setupWebsocket();
     }
-    emscripten_set_main_loop_arg(pref::updateDrawFrame, nullptr, 60, true);
+    emscripten_set_main_loop_arg(pref::updateDrawFrame, nullptr, 30, true);
     emscripten_websocket_deinitialize();
     return 0;
 }

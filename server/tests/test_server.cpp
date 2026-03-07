@@ -157,7 +157,7 @@ TEST_CASE("calculateDealScore")
                      {Seven, 2 *  4, (tricksW1 *  4) + (2 *  4), (tricksW2 *  4) + (2 *  4)},
                      {Eight, 3 *  6, (tricksW1 *  6) + (3 *  6), (tricksW2 *  6) + (3 *  6)},
                      { Nine, 4 *  8, (tricksW1 *  8) + (4 *  8), (tricksW2 *  8) + (4 *  8)},
-                     {  Ten, 5 * 10, (tricksW1 * 10) + (5 * 10), (tricksW2 * 10) + (5 * 10)},
+                     {  Ten, 5 * 10,                         0,                          0 },
             }));
             const auto actual = calculateDealScore(
                 {.id = de, .contractLevel = contractLevel, .tricksTaken = tricksDeclarer}, {
@@ -180,7 +180,7 @@ TEST_CASE("calculateDealScore")
                     {Seven,  4, 2 *  4},
                     {Eight,  6, 1 *  6},
                     { Nine,  8, 1 *  8},
-                    {  Ten, 10, 1 * 10},
+                    {  Ten, 10,      0},
             }));
             const auto actual = calculateDealScore(
                 {.id = de, .contractLevel = contractLevel, .tricksTaken = 10}, {
@@ -203,7 +203,7 @@ TEST_CASE("calculateDealScore")
                     {Seven, 4, 1 *  4},
                     {Eight, 6, 1 *  6},
                     { Nine, 8, 1 *  8},
-                    { Ten, 10, 1 * 10},
+                    { Ten, 10,      0},
             }));
             const auto actual = calculateDealScore(
                 {.id = de, .contractLevel = contractLevel, .tricksTaken = 10}, {
