@@ -252,6 +252,7 @@ struct Player {
 struct BiddingMenu {
     bool isVisible{};
     std::string bid;
+    PlayerId playerId;
     int passRound{};
     std::size_t rank = AllRanks;
 
@@ -259,6 +260,7 @@ struct BiddingMenu {
     {
         isVisible = false;
         bid.clear();
+        playerId.clear();
         passRound = 0;
         rank = AllRanks;
     }
@@ -1697,7 +1699,10 @@ auto handleBidding(const Message& msg) -> void
     auto newRank = bidRank(bid);
     auto& curRank = ctx().bidding.rank;
     if (ctx().myPlayerId == ctx().forehandId and newRank != 0) { --newRank; }
-    if (newRank >= curRank or curRank == AllRanks) { ctx().bidding.bid = bid; }
+    if ((newRank >= curRank or curRank == AllRanks) and (bid != PREF_PASS or curRank == AllRanks)) {
+        ctx().bidding.bid = bid;
+        ctx().bidding.playerId = playerId;
+    }
     if (bid != PREF_PASS and (newRank > curRank or curRank == AllRanks)) { curRank = newRank; }
     PREF_DI(playerId, bid, curRank, newRank);
     ctx().player(playerId).bid = std::move(bid);
@@ -3347,7 +3352,10 @@ auto drawRankAndSuitText(
 
 auto sendBid(const std::string& bid, const bool finalBid, const std::size_t rank) -> void
 {
-    ctx().bidding.bid = bid;
+    if (bid != PREF_PASS or ctx().bidding.rank == AllRanks) {
+        ctx().bidding.bid = bid;
+        ctx().bidding.playerId = ctx().myPlayerId;
+    }
     ctx().myPlayer().bid = bid;
     if (bid != PREF_PASS) { ctx().bidding.rank = rank; }
     ctx().bidding.isVisible = false;
@@ -3557,9 +3565,9 @@ auto drawWhistingOrMiserMenu() -> void
     } else {
         drawMenu(WhistingButtons, ctx().whisting.isVisible, click, checkHalfWhist);
     }
-    // TODO: draw player's name whose bid is
     static const auto& font = ctx().fontL;
     static const auto fontSize = ctx().fontSizeL();
+    static const auto playerNameFontSize = fontSize * 0.6f;
     static const auto pos = r::Vector2{VirtualW * 0.5f, BorderMargin + fontSize * 0.5f};
     const auto bids = players() | rv::transform(&Player::bid);
     const auto ranks = bids
@@ -3568,17 +3576,32 @@ auto drawWhistingOrMiserMenu() -> void
         | rv::transform(&bidRank)
         | rng::to_vector;
     const auto bid = std::empty(ranks) ? ctx().bidding.bid : BidsRank[rng::max(ranks)];
+    const auto playerName = (std::empty(bid) or std::empty(ctx().bidding.playerId))
+        ? std::string{}
+        : ctx().player(ctx().bidding.playerId).name;
     const auto isPassGame = rng::all_of(bids, equalTo(PREF_PASS));
-    const auto text = isPassGame and ctx().bidding.passRound != 0
+    const auto bidText = isPassGame and ctx().bidding.passRound != 0
         ? ctx().localizeText(GameText::Passing) + prettifyNumber(ctx().bidding.passRound)
         : std::string{ctx().localizeBid(bid)};
-    if (isRedSuit(text)) {
-        const auto textSize = font.MeasureText(text, fontSize, FontSpacing);
-        const auto textPos = r::Vector2{pos.x - textSize.x * 0.5f, pos.y - textSize.y * 0.5f};
-        drawRankAndSuitText(text, font, fontSize, textPos, getGuiColor(TEXT_COLOR_NORMAL), redColor());
+    const auto drawBidHeaderWithPlayerName = [&](const std::string& prefix) {
+        const auto prefixSize = font.MeasureText(prefix, playerNameFontSize, FontSpacing);
+        const auto bidSize = font.MeasureText(bidText, fontSize, FontSpacing);
+        const auto startX = pos.x - (prefixSize.x + bidSize.x) * 0.5f;
+        const auto prefixPos = r::Vector2{startX, pos.y - prefixSize.y * 0.5f};
+        const auto bidPos = r::Vector2{startX + prefixSize.x, pos.y - bidSize.y * 0.5f};
+        font.DrawText(prefix, prefixPos, playerNameFontSize, FontSpacing, getGuiColor(TEXT_COLOR_NORMAL));
+        if (isRedSuit(bidText)) {
+            drawRankAndSuitText(bidText, font, fontSize, bidPos, getGuiColor(TEXT_COLOR_NORMAL), redColor());
+        } else {
+            font.DrawText(bidText, bidPos, fontSize, FontSpacing, getGuiColor(TEXT_COLOR_NORMAL));
+        }
+    };
+    if (ctx().miserCardsPanel.isVisible) { return; }
+    if (not std::empty(playerName) and not isPassGame) {
+        drawBidHeaderWithPlayerName(fmt::format("{} ", playerName));
     } else {
         withGuiFont(font, [&] {
-            withGuiStyle(DEFAULT, TEXT_SIZE, static_cast<int>(fontSize), [&] { drawGuiLabelCentered(text, pos); });
+            withGuiStyle(DEFAULT, TEXT_SIZE, static_cast<int>(fontSize), [&] { drawGuiLabelCentered(bidText, pos); });
         });
     }
 }
