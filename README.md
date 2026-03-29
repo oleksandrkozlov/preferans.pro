@@ -38,7 +38,7 @@ docker run --privileged -ti -e DISPLAY=$DISPLAY \
 ```
 docker run --privileged -ti -e DISPLAY=host.docker.internal:0 \
     -v /tmp/.X11-unix:/tmp/.X11-unix \
-    -v $HOME:$HOME -w $PWD -p 8000:8000 -p 8080:8080 --name preferans preferans
+    -v $HOME:$HOME -w $PWD -p 8000:8000 -p 8080:8080 -p 8081:8081 --name preferans preferans
 ```
 
 ### Build
@@ -99,6 +99,8 @@ Which runs:
 ```
 ./build-server/bin/server 0.0.0.0 8080 ./server/data/game.dat
 python3 -m http.server -d build-client/bin -b 0.0.0.0 8000
+python3 tools/prefbuff/server.py ./server/data/game.dat --host 0.0.0.0 --port 8081
+
 ```
 For Release:
 * Obtain and install your TLS certificates using [Certbot Instructions | Certbot](https://certbot.eff.org/instructions?ws=nginx&os=pip) and [configure](server/config/yoursite.com) Nginx accordingly.
@@ -106,12 +108,16 @@ For Release:
 ```
 nginx
 ```
-* Start the WebSocket server:
+* Start the WebSocket and HTTP server:
 ```
-./build-server/bin/server <ip-address> 8080 ./server/data/game.dat \
+nohup ./build-server/bin/server <ip-address> 8080 ./server/data/game.dat \
     --cert=/path/to/fullchain.pem \
     --key=/path/to/privkey.pem \
-    --dh=/path/to/ssl-dhparams.pem
+    --dh=/path/to/ssl-dhparams.pem &
+```
+```
+python3 tools/prefbuff/server.py server/data/game.dat \
+    --host 127.0.0.1 --port 8081  > prefbuff.log 2>&1 &
 ```
 
 ### Test

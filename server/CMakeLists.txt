@@ -22,7 +22,6 @@ if(CMAKE_BUILD_TYPE STREQUAL Debug)
     include(clang-format)
     include(clang-tidy)
     include(cmake-format)
-    include(iwyu)
     include(sanitizers)
 endif()
 

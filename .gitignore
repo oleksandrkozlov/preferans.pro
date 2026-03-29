@@ -9,6 +9,7 @@ client/resources/sounds/ready_check_received.mp3
 client/resources/sounds/ready_check_requested.mp3
 client/resources/sounds/ready_check_succeeded.mp3
 client/resources/text/phrases-extra.txt
+client/resources/text/phrases.txt
 compile_commands.json
 nohup.out
 proto/*.pb.cc
