@@ -34,7 +34,7 @@
     }
     .app {
       display: grid;
-      grid-template-columns: 200px 1fr;
+      grid-template-columns: 150px 1fr;
       min-height: 100vh;
     }
     .sidebar {
@@ -48,7 +48,7 @@
       padding: 16px;
       overflow: auto;
     }
-    h1 { margin: 0 0 6px; font-size: 32px; text-align: center; cursor: pointer; }
+    h1 { margin: 0 0 6px; font-size: 24px; text-align: center; cursor: pointer; }
     .sub { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
     .list-item {
       border: 1px solid var(--table-border);
@@ -75,7 +75,7 @@
     }
     .summary-cards {
       display: grid;
-      grid-template-columns: repeat(7, minmax(0, 1fr));
+      grid-template-columns: repeat(9, minmax(0, 1fr));
       gap: 8px;
       margin-bottom: 8px;
     }
@@ -208,6 +208,10 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+    .mmr-suffix {
+      font-size: 0.75em;
+      color: var(--muted);
     }
     .stat-tooltip {
       position: fixed;
@@ -391,7 +395,7 @@
       handStatsCacheKey: "",
       handStatsLoading: false,
       handStatsError: "",
-      handMatches: { hands: [], akq: [], akqj: [], aces3: [], miser: [], declarer: [], pass: [], whist: [] },
+      handMatches: { hands: [], akq: [], akqj: [], aces3: [], miser: [], declarer: [], pass: [], passing: [], whist: [] },
       activeHandFilter: "",
       pendingGameScrollId: null
     };
@@ -545,6 +549,21 @@
       );
     }
 
+    function isPassDecision(value) {
+      const text = String(value ?? "").trim();
+      const key = text.toLowerCase();
+      return text === "-" || key === "pass";
+    }
+
+    function allPlayersPassed(deal) {
+      const playerIds = Object.keys(deal?.hands || {});
+      if (playerIds.length === 0) return false;
+      return playerIds.every(pid => {
+        const rawDecision = deal?.decisions?.[pid] ?? (pid === deal?.declarer_id ? deal?.contract : "");
+        return isPassDecision(rawDecision);
+      });
+    }
+
     function bidHtml(text) {
       const normalized = normalizeContract(text);
       const safe = esc(normalized);
@@ -626,7 +645,7 @@
       state.handStatsCacheKey = "";
       state.handStatsLoading = false;
       state.handStatsError = "";
-      state.handMatches = { hands: [], akq: [], akqj: [], aces3: [], miser: [], declarer: [], pass: [], whist: [] };
+      state.handMatches = { hands: [], akq: [], akqj: [], aces3: [], miser: [], declarer: [], pass: [], passing: [], whist: [] };
     }
 
     function hasSuitedRanksInHand(cards, requiredRanks) {
@@ -764,6 +783,8 @@
       let decisionSamples = 0;
       let passCount = 0;
       let passMadeCount = 0;
+      let passingCount = 0;
+      let passingMadeCount = 0;
       let whistLikeCount = 0;
       let whistMadeCount = 0;
 
@@ -775,9 +796,10 @@
           const cards = deal?.hands?.[playerId];
           if (!Array.isArray(cards) || cards.length === 0) continue;
           handsCount += 1;
+          const dealMmr = Number(deal?.scores?.[playerId]?.mmr || 0);
           if (deal?.declarer_id === playerId) {
             declarerCount += 1;
-            const declarerDealMmr = Number(deal?.scores?.[playerId]?.mmr || 0);
+            const declarerDealMmr = dealMmr;
             if (declarerDealMmr > 0) declarerMadeCount += 1;
             if (isMiserContract(deal?.contract)) {
               miserCount += 1;
@@ -796,16 +818,18 @@
           if (decisionText !== "") {
             decisionSamples += 1;
             const decisionKey = decisionText.toLowerCase();
-            if (decisionText === "-" || decisionKey === "pass") {
+            if (isPassDecision(rawDecision)) {
               passCount += 1;
-              const passDealMmr = Number(deal?.scores?.[playerId]?.mmr || 0);
-              if (passDealMmr > 0) passMadeCount += 1;
+              if (dealMmr > 0) passMadeCount += 1;
             }
             if (decisionKey.includes("whist")) {
               whistLikeCount += 1;
-              const whistDealMmr = Number(deal?.scores?.[playerId]?.mmr || 0);
-              if (whistDealMmr > 0) whistMadeCount += 1;
+              if (dealMmr > 0) whistMadeCount += 1;
             }
+          }
+          if (allPlayersPassed(deal)) {
+            passingCount += 1;
+            if (dealMmr > 0) passingMadeCount += 1;
           }
 
           const bySuit = { "♠": [], "♦": [], "♣": [], "♥": [] };
@@ -859,6 +883,8 @@
         avgDeclarerTalonHcp: declarerCount ? (declarerTalonHcpTotal / declarerCount) : 0,
         passRatePct: percentText(passCount, decisionSamples),
         passMadePct: percentText(passMadeCount, passCount),
+        passingRatePct: percentText(passingCount, handsCount),
+        passingMadePct: percentText(passingMadeCount, passingCount),
         whistRatePct: percentText(whistLikeCount, decisionSamples),
         whistMadePct: percentText(whistMadeCount, whistLikeCount),
       };
@@ -897,9 +923,10 @@
           declarer: collectMatchesForPlayer(state.selectedUserId, valid, (_cards, deal, playerId) => deal?.declarer_id === playerId),
           pass: collectMatchesForPlayer(state.selectedUserId, valid, (_cards, deal, playerId) => {
             const rawDecision = deal?.decisions?.[playerId] ?? (deal?.declarer_id === playerId ? deal?.contract : "");
-            const decisionText = String(rawDecision ?? "").trim();
-            const decisionKey = decisionText.toLowerCase();
-            return decisionText === "-" || decisionKey === "pass";
+            return isPassDecision(rawDecision);
+          }),
+          passing: collectMatchesForPlayer(state.selectedUserId, valid, (_cards, deal) => {
+            return allPlayersPassed(deal);
           }),
           whist: collectMatchesForPlayer(state.selectedUserId, valid, (_cards, deal, playerId) => {
             const rawDecision = deal?.decisions?.[playerId] ?? (deal?.declarer_id === playerId ? deal?.contract : "");
@@ -940,7 +967,7 @@
         return `
         <div class="list-item ${u.player_id === state.selectedUserId ? "active" : ""}" data-user-id="${esc(u.player_id)}">
           <div class="name">${esc(u.player_name)}</div>
-          <div class="meta">MMR: <span class="${scoreClass(mmrText)}">${esc(mmrText)}</span> • games: ${u.games_count}</div>
+          <div class="meta">MMR: <span class="${scoreClass(mmrText)}">${esc(mmrText)}</span></div>
         </div>
         `;
       }).join("");
@@ -1207,6 +1234,33 @@
       return `${v > 0 ? "+" : ""}${v.toFixed(2)}`;
     }
 
+    function formatSignedInteger(value) {
+      const n = Math.trunc(Number(value || 0));
+      return `${n > 0 ? "+" : ""}${n}`;
+    }
+
+    function formatDealSplit(matches, filterKey) {
+      const list = Array.isArray(matches) ? matches : [];
+      const total = list.length;
+      if (!["hands", "akq", "akqj", "aces3", "declarer", "pass", "passing", "whist", "miser"].includes(filterKey)) return `${total}`;
+      let positive = 0;
+      let negative = 0;
+      let totalMmr = 0;
+      for (const match of list) {
+        const mmr = Number(match?.mmr || 0);
+        totalMmr += mmr;
+        if (mmr > 0) {
+          positive += 1;
+        } else if (mmr < 0) {
+          negative += 1;
+        }
+      }
+      if (filterKey === "hands") {
+        return `${total} • <span class="score-good">${positive}</span> • <span class="score-bad">${negative}</span>`;
+      }
+      return `${total} • <span class="score-good">${positive}</span> • <span class="score-bad">${negative}</span> • <span class="${scoreClass(formatSignedInteger(totalMmr))}">${formatSignedInteger(totalMmr)}</span><span class="mmr-suffix"> MMR</span>`;
+    }
+
     function renderMain() {
       const content = document.getElementById("content");
       const mainEl = document.querySelector("main.main");
@@ -1251,6 +1305,14 @@
               <div class="summary-label">Win Rate</div>
               <div class="summary-value ${scoreClass(totals.resultText)}">${totals.winRate}%</div>
             </div>
+            <div class="summary-card ${state.activeHandFilter === "passing" ? "is-active" : ""}" data-action="filter-passing" data-tip="Percentage of deals where all players passed.&#10;↑ - percentage of those deals with positive MMR.">
+              <div class="summary-label">Passing Rate</div>
+              <div class="summary-value">${state.handStatsLoading ? "..." : (state.handStats ? state.handStats.passingRatePct : "-")}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats?.passingMadePct || "")}">${state.handStats ? state.handStats.passingMadePct : "-"}</span></span></div>
+            </div>
+            <div class="summary-card ${state.activeHandFilter === "miser" ? "is-active" : ""}" data-action="filter-miser" data-tip="Number of deals played as misère.&#10;↑ - percentage of those deals with positive MMR.">
+              <div class="summary-label">Misère</div>
+              <div class="summary-value">${state.handStatsLoading ? "..." : (state.handStats ? state.handStats.miserCount : "-")}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats?.miserMadePct || "")}">${state.handStats ? state.handStats.miserMadePct : "-"}</span></span></div>
+            </div>
             <div class="summary-card" data-tip="Total dump/pool/whist across all games.">
               <div class="summary-label">D/P/W</div>
               <div class="summary-value">${esc(totals.totalDPW)}</div>
@@ -1276,7 +1338,6 @@
                       <div class="hand-stat-card ${state.activeHandFilter === "declarer" ? "is-active" : ""}" data-action="filter-declarer" data-tip="Percentage of deals played as declarer.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Declarer Rate</div><div class="hand-stat-value">${state.handStats.declarerPct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.declarerMadePct)}">${state.handStats.declarerMadePct}</span></span></div></div>
                       <div class="hand-stat-card ${state.activeHandFilter === "pass" ? "is-active" : ""}" data-action="filter-pass" data-tip="Percentage of deals passed.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Pass Rate</div><div class="hand-stat-value">${state.handStats.passRatePct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.passMadePct)}">${state.handStats.passMadePct}</span></span></div></div>
                       <div class="hand-stat-card ${state.activeHandFilter === "whist" ? "is-active" : ""}" data-action="filter-whist" data-tip="Percentage of deals played as whist/half-whist.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Whist Rate</div><div class="hand-stat-value">${state.handStats.whistRatePct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.whistMadePct)}">${state.handStats.whistMadePct}</span></span></div></div>
-                      <div class="hand-stat-card ${state.activeHandFilter === "miser" ? "is-active" : ""}" data-action="filter-miser" data-tip="Number of deals played as misère.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Misère</div><div class="hand-stat-value">${state.handStats.miserCount}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.miserMadePct)}">${state.handStats.miserMadePct}</span></span></div></div>
                       <div class="hand-stat-card ${state.activeHandFilter === "akq" ? "is-active" : ""}" data-action="filter-akq" data-tip="Percentage of hands with at least one suited AKQ combination (e.g., A♠ K♠ Q♠).&#10;In a uniformly random deal, the expected value is 9.54%."><div class="hand-stat-label">AKQ Suited</div><div class="hand-stat-value">${state.handStats.suitedAKQPct}<span class="hand-stat-delta ${scoreClass(formatSignedPpDelta(state.handStats.suitedAKQRate - 9.5385))}">${formatSignedPpDelta(state.handStats.suitedAKQRate - 9.5385)}</span></div></div>
                       <div class="hand-stat-card ${state.activeHandFilter === "akqj" ? "is-active" : ""}" data-action="filter-akqj" data-tip="Percentage of hands with at least one suited AKQJ combination (e.g., A♠ K♠ Q♠ J♠).&#10;In a uniformly random deal, the expected value is 2.33%."><div class="hand-stat-label">AKQJ Suited</div><div class="hand-stat-value">${state.handStats.suitedAKQJPct}<span class="hand-stat-delta ${scoreClass(formatSignedPpDelta(state.handStats.suitedAKQJRate - 2.3334))}">${formatSignedPpDelta(state.handStats.suitedAKQJRate - 2.3334)}</span></div></div>
                       <div class="hand-stat-card ${state.activeHandFilter === "aces3" ? "is-active" : ""}" data-action="filter-aces3" data-tip="Percentage of hands with three or more aces (e.g., A♠ A♦ A♣).&#10;In a uniformly random deal, the expected value is 7.93%."><div class="hand-stat-label">3+ Aces</div><div class="hand-stat-value">${state.handStats.threePlusAcesPct}<span class="hand-stat-delta ${scoreClass(formatSignedPpDelta(state.handStats.threePlusAcesRate - 7.9255))}">${formatSignedPpDelta(state.handStats.threePlusAcesRate - 7.9255)}</span></div></div>
@@ -1288,7 +1349,7 @@
           </div>
           ${state.activeHandFilter ? `
           <div class="section">
-            <h2>${state.activeHandFilter === "hands" ? "Deals" : (state.activeHandFilter === "akq" ? "AKQ Suited Deals" : (state.activeHandFilter === "akqj" ? "AKQJ Suited Deals" : (state.activeHandFilter === "aces3" ? "3+ Aces Deals" : (state.activeHandFilter === "miser" ? "Misère Deals" : (state.activeHandFilter === "declarer" ? "Declarer Deals" : (state.activeHandFilter === "pass" ? "Pass Deals" : "Whist Deals"))))))} • ${state.handMatches[state.activeHandFilter]?.length || 0}</h2>
+            <h2>${state.activeHandFilter === "hands" ? "Deals" : (state.activeHandFilter === "akq" ? "AKQ Suited Deals" : (state.activeHandFilter === "akqj" ? "AKQJ Suited Deals" : (state.activeHandFilter === "aces3" ? "3+ Aces Deals" : (state.activeHandFilter === "miser" ? "Misère Deals" : (state.activeHandFilter === "declarer" ? "Declarer Deals" : (state.activeHandFilter === "pass" ? "Pass Deals" : (state.activeHandFilter === "passing" ? "Passing Deals" : "Whist Deals")))))))} • ${formatDealSplit(state.handMatches[state.activeHandFilter], state.activeHandFilter)}</h2>
             ${(state.handMatches[state.activeHandFilter]?.length || 0) === 0 ? `<div class="empty">No matching deals found.</div>` : `
               <div class="filtered-table-wrap">
                 <table class="filtered-deals-table">
@@ -1489,6 +1550,17 @@
       content.querySelectorAll("[data-action='filter-pass']").forEach(el => {
         el.addEventListener("click", () => {
           state.activeHandFilter = state.activeHandFilter === "pass" ? "" : "pass";
+          state.selectedGameId = null;
+          state.selectedGameDisplayId = null;
+          state.gameDetails = null;
+          state.gameDetailsMessage = "";
+          saveViewState();
+          renderMain();
+        });
+      });
+      content.querySelectorAll("[data-action='filter-passing']").forEach(el => {
+        el.addEventListener("click", () => {
+          state.activeHandFilter = state.activeHandFilter === "passing" ? "" : "passing";
           state.selectedGameId = null;
           state.selectedGameDisplayId = null;
           state.gameDetails = null;
