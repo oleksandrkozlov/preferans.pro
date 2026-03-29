@@ -3579,11 +3579,13 @@ auto drawHowToPlayMenu() -> void
 
 auto removeCardsFromHand(Player& player, const std::vector<CardNameView>& cardNames) -> void
 {
+    ctx().lastTrickOrTalon.clear();
     for (const auto name : cardNames) {
         const auto it = rng::find_if(player.hand, [&](const Card* card) { return card->name == name; });
         if (it == player.hand.end()) { continue; }
         ctx().cardPositions.erase(name);
         player.hand.erase(it);
+        ctx().lastTrickOrTalon.push_back(name);
     }
 }
 
