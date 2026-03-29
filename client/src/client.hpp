@@ -256,7 +256,7 @@ enum class GameLang : std::size_t {
     PREF_X(Language, "Language", "Мова", "Язык")                                                                       \
     PREF_X(Lavanda, "Lavanda", "Лаванда", "Лаванда")                                                                   \
     PREF_X(LogOut, "LOG OUT", "ВИХІД", "ВЫХОД")                                                                        \
-    PREF_X(LogOutOfTheAccount, "Leave the game and log\n\nout of your account?","Покинути гру та вийти\n\nз облікового запису?", "Покинуть игру и выйти\n\nиз учётной записи?")    \
+    PREF_X(LogOutOfTheAccount, "Leave the game and log out?","Покинути гру та вийти?", "Покинуть игру и выйти?")       \
     PREF_X(Login, "LOG IN", "ЛОГІН", "ЛОГИН")                                                                          \
     PREF_X(Lost, "Lost", "Поразка", "Поражение")                                                                       \
     PREF_X(MMR, "MMR", "РЕЙТИНГ", "РЕЙТИНГ")                                                                           \
