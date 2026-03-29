@@ -195,6 +195,21 @@ TEST_CASE("calculateDealScore")
         REQUIRE(actual == expected);
     }
 
+    SECTION("pass whister tricks are credited to the active whister")
+    {
+            const auto actual = calculateDealScore(
+                {.id = de, .contractLevel = Six,   .tricksTaken = 7}, {
+                {.id = w1, .choice = Whist,        .tricksTaken = 1},
+                {.id = w2, .choice = Pass,         .tricksTaken = 2},
+            });
+            const auto expected = DealScore{
+                {de, {.dump = 0, .pool = 2, .whist = 0}},
+                {w1, {.dump = 2, .pool = 0, .whist = 6}},
+                {w2, {.dump = 0, .pool = 0, .whist = 0}},
+            };
+        REQUIRE(actual == expected);
+    }
+
     SECTION("both whisters did not fulfill what declared")
     {
             const auto [contractLevel, declarerPool, dumpW] = GENERATE(

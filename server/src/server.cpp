@@ -1252,12 +1252,14 @@ auto Context::countWhistingChoice(const WhistingChoice choice) -> std::ptrdiff_t
             return result;
         }
         if (w.choice == WhistingChoice::Whist) {
-            result.whist += w.tricksTaken * contractPrice;
+            const auto effectiveTricksTaken =
+                rng::any_of(whisters, equalTo(WhistingChoice::Pass), &Whister::choice) ? whistersTakenTricks : w.tricksTaken;
+            result.whist += effectiveTricksTaken * contractPrice;
             if (deficit(twoWhistersReqTricks, whistersTakenTricks) > 0) {
                 const auto reqTricks = rng::all_of(whisters, equalTo(WhistingChoice::Whist), &Whister::choice)
                     ? oneWhisterReqTricks(declarer.contractLevel)
                     : twoWhistersReqTricks;
-                result.dump += deficit(reqTricks, w.tricksTaken) * contractPrice;
+                result.dump += deficit(reqTricks, effectiveTricksTaken) * contractPrice;
             }
         } else if (w.choice == WhistingChoice::HalfWhist) {
             result.whist += static_cast<std::int32_t>(
