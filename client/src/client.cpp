@@ -3393,7 +3393,15 @@ auto drawBiddingMenu() -> void
                 cell,
                 getGuiColor(BUTTON, PREF_GUI_PROPERTY(BASE, state)),
                 getGuiColor(BUTTON, PREF_GUI_PROPERTY(BORDER, state)));
+            const auto showPassRound = bid == PREF_PASS
+                and ctx().bidding.passRound > 0
+                and rng::all_of(players() | rv::transform(&Player::bid), [](const std::string_view playerBid) {
+                                           return std::empty(playerBid) or playerBid == PREF_PASS;
+                                       });
             auto text = std::string{ctx().localizeBid(bid)};
+            if (showPassRound) {
+                text += prettifyNumber(ctx().bidding.passRound + (ctx().bidding.passRound < 3 ? 1 : 0));
+            }
             auto textSize = ctx().fontM.MeasureText(text, ctx().fontSizeM(), FontSpacing);
             const auto textX = cell.x + (cell.width - textSize.x) * 0.5f;
             const auto textY = cell.y + (cell.height - textSize.y) * 0.5f;
