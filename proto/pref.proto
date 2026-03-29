@@ -182,6 +182,7 @@ message ScoreData {
 message DealFinished {
   map<string /*player_id*/, ScoreData> score_sheet = 1;
   bool is_game_over = 2;
+  map<string /*player_id*/, int32 /*last_deal_mmr*/> last_deal_mmr = 3;
 }
 
 message Log {

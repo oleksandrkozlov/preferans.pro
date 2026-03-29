@@ -426,7 +426,7 @@ auto removePlayer(Player::Id playerId) -> task<>
     PREF_DI(playerId);
     ctx().players.erase(playerId);
     co_await sendPlayerLeft(std::move(playerId));
-    co_await sendDealFinished(true);
+    co_await sendDealFinished({}, true);
     clearGameState();
 }
 
@@ -523,6 +523,7 @@ auto dealFinished(const bool isDownThreeTricks) -> task<bool>
     updateScoreSheetForDeal(isDownThreeTricks);
     const auto finalResult = calculateFinalResult(makeFinalScore(ctx().scoreSheet));
     auto playerDealScores = std::vector<std::pair<Player::Id, DealPlayerScore>>{};
+    auto lastDealMmr = std::map<Player::Id, std::int32_t>{};
     for (const auto& [playerId, score] : ctx().scoreSheet) {
         auto prevPool = 0;
         auto prevDump = 0;
@@ -551,6 +552,7 @@ auto dealFinished(const bool isDownThreeTricks) -> task<bool>
         dealScore.set_dump(totalDump - prevDump);
         dealScore.set_whists(totalWhists - prevWhists);
         dealScore.set_mmr(totalMmr - prevMmr);
+        lastDealMmr.emplace(playerId, totalMmr - prevMmr);
         playerDealScores.emplace_back(playerId, std::move(dealScore));
         addOrUpdateUserGame(
             ctx().gameData,
@@ -575,7 +577,7 @@ auto dealFinished(const bool isDownThreeTricks) -> task<bool>
         | rv::transform([](const auto& pool) { return rng::accumulate(pool, 0); });
     const auto isGameOver = rng::all_of(pools, [](const std::int32_t pool) { return pool >= ScoreTarget; });
     PREF_DI(isGameOver, pools);
-    co_await sendDealFinished(isGameOver);
+    co_await sendDealFinished(lastDealMmr, isGameOver);
     ctx().clear();
     co_return isGameOver;
 }

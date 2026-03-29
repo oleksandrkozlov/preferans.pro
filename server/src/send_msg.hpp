@@ -245,9 +245,9 @@ inline auto sendTrickFinished() -> task<>
     return sendToAll(makeTrickFinished(playersTakenTricks));
 }
 
-inline auto sendDealFinished(const bool isGameOver) -> task<>
+inline auto sendDealFinished(const std::map<PlayerId, std::int32_t>& lastDealMmr, const bool isGameOver) -> task<>
 {
-    return sendToAll(makeDealFinished(ctx().scoreSheet, isGameOver));
+    return sendToAll(makeDealFinished(ctx().scoreSheet, lastDealMmr, isGameOver));
 }
 
 inline auto sendPingPong(const Message& msg, const ChannelPtr& ch) -> task<>
