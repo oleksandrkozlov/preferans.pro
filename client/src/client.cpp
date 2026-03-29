@@ -1887,7 +1887,15 @@ auto handleAudioSignal(const Message& msg) -> void
 #pragma GCC diagnostic ignored "-Wdollar-in-identifier-extension"
     EM_ASM(
         {
-            if (!Module.prefAudio) { return; }
+            if (!Module.prefAudio) {
+                Module.prefAudioPendingSignals = Module.prefAudioPendingSignals || [];
+                Module.prefAudioPendingSignals.push({
+                    from: UTF8ToString($0),
+                    kind: UTF8ToString($1),
+                    data: UTF8ToString($2),
+                });
+                return;
+            }
             Module.prefAudio.handleSignal(
                 UTF8ToString($0), // from
                 UTF8ToString($1), // kind
@@ -4601,6 +4609,7 @@ auto initAudioEngine() -> void
 #pragma GCC diagnostic ignored "-Wdollar-in-identifier-extension"
 #pragma GCC diagnostic ignored "-Winvalid-pp-token"
     EM_ASM({
+        Module.prefAudioPendingSignals = Module.prefAudioPendingSignals || [];
         if (!Module.prefAudio) {
             Module.prefAudio = (function () {
                 const peers = new Map();
@@ -4764,6 +4773,13 @@ auto initAudioEngine() -> void
         }
         Module.prefAudio.setSelf(UTF8ToString($0));
         Module.prefAudio.setPeers(JSON.parse(UTF8ToString($1)));
+        if (Module.prefAudioPendingSignals.length) {
+            const pendingSignals = Module.prefAudioPendingSignals;
+            Module.prefAudioPendingSignals = [];
+            pendingSignals.forEach(signal => {
+                Module.prefAudio.handleSignal(signal.from, signal.kind, signal.data);
+            });
+        }
     }, ctx().myPlayerId.c_str(), peersJson.c_str());
 #pragma GCC diagnostic pop
     // clang-format on
