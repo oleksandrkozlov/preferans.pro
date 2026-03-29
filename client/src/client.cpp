@@ -303,6 +303,14 @@ struct HowToPlayMenu {
     return suit.ends_with(PREF_DIAMOND) or suit.ends_with(PREF_HEART);
 }
 
+auto drawRankAndSuitText(
+    const std::string_view text,
+    const r::Font& font,
+    const float fontSize,
+    const r::Vector2& pos,
+    const r::Color rankColor,
+    const r::Color suitColor) -> void;
+
 [[nodiscard]] auto getStyle(const int control, const int property) noexcept -> float
 {
     return static_cast<float>(GuiGetStyle(control, property));
@@ -3167,7 +3175,27 @@ auto drawBid(const r::Vector2& pos, const Player& player, const Shift shift) -> 
 {
     return withGuiFont(ctx().fontL, [&] {
         return withGuiStyle(DEFAULT, TEXT_SIZE, static_cast<int>(ctx().fontSizeM()), [&] {
-            return drawGameText(pos, ctx().localizeBid(player.bid), shift).first;
+            using enum Shift;
+            const auto bidText = std::string{ctx().localizeBid(player.bid)};
+            if (not isRedSuit(bidText)) {
+                return drawGameText(pos, bidText, shift).first;
+            }
+
+            const auto textSize = measureGuiText(bidText);
+            const auto sign = hasShift(shift, Negative) ? -1.f : 1.f;
+            const auto shiftX = sign * (textSize.x * 0.5f + textSize.y * 0.5f);
+            const auto shiftY = sign * textSize.y;
+            const auto anchor = hasShift(shift, Horizont) ? r::Vector2{pos.x + shiftX, pos.y}
+                                                          : r::Vector2{pos.x, pos.y + shiftY};
+            if (std::empty(bidText)) { return false; }
+            drawRankAndSuitText(
+                bidText,
+                ctx().fontL,
+                ctx().fontSizeM(),
+                {anchor.x - textSize.x * 0.5f, anchor.y - textSize.y * 0.5f},
+                getGuiColor(TEXT_COLOR_NORMAL),
+                redColor());
+            return true;
         });
     });
 }
