@@ -229,6 +229,7 @@ struct Context {
 
 inline constexpr auto ToPlayerId = &Context::Players::value_type::first;
 inline constexpr auto ToPlayer = &Context::Players::value_type::second;
+inline constexpr auto TotalTricksPerDeal = 10;
 
 struct Beat {
     std::string_view candidate;

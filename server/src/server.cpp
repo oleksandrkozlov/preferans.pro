@@ -927,6 +927,7 @@ auto handleMakeOffer(const Message& msg) -> task<>
     if (not makeOffer) { co_return; }
     const auto playerId = makeOffer->player_id();
     const auto offerRequest = makeOffer->offer();
+    PREF_I("{}, offer: {}", PREF_V(playerId), Offer_Name(offerRequest));
     auto& player = ctx().player(playerId);
     auto& declarer = getDeclarer();
     const auto isMiser = declarer.bid.contains(PREF_MIS);
@@ -946,7 +947,9 @@ auto handleMakeOffer(const Message& msg) -> task<>
             if (isMiser) { return playerByWhistingChoice(ctx().players, WhistingChoice::Whist); }
             return declarer;
         });
-        whomAddTricks.tricksTaken += static_cast<int>(std::size(declarer.hand));
+        const auto remaningTricks = TotalTricksPerDeal - sum(players() | rv::transform(&Player::tricksTaken));
+        whomAddTricks.tricksTaken += remaningTricks;
+        PREF_DI(remaningTricks, whomAddTricks.tricksTaken);
         resetPassGameIfNeeded();
         // TODO: create GameState once
         // TODO: send only taken tricks
@@ -1214,20 +1217,19 @@ auto Context::countWhistingChoice(const WhistingChoice choice) -> std::ptrdiff_t
 
     const auto& w1 = whisters[0];
     const auto& w2 = whisters[1];
-    [[maybe_unused]] static constexpr auto totalTricksPerDeal = 10;
 
     assert(not std::empty(declarer.id) and not std::empty(w1.id) and not std::empty(w2.id));
     assert(declarer.id != w1.id and declarer.id != w2.id and w1.id != w2.id);
-    assert(0 <= w1.tricksTaken and w1.tricksTaken <= totalTricksPerDeal);
-    assert(0 <= w2.tricksTaken and w2.tricksTaken <= totalTricksPerDeal);
-    assert(0 <= declarer.tricksTaken and declarer.tricksTaken <= totalTricksPerDeal);
+    assert(0 <= w1.tricksTaken and w1.tricksTaken <= TotalTricksPerDeal);
+    assert(0 <= w2.tricksTaken and w2.tricksTaken <= TotalTricksPerDeal);
+    assert(0 <= declarer.tricksTaken and declarer.tricksTaken <= TotalTricksPerDeal);
 
     const auto contractPrice = pref::contractPrice(declarer.contractLevel);
     const auto declarerReqTricks = pref::declarerReqTricks(declarer.contractLevel);
     const auto twoWhistersReqTricks = pref::twoWhistersReqTricks(declarer.contractLevel);
 
     const auto whistersTakenTricks = w1.tricksTaken + w2.tricksTaken;
-    assert(0 <= whistersTakenTricks and whistersTakenTricks <= totalTricksPerDeal);
+    assert(0 <= whistersTakenTricks and whistersTakenTricks <= TotalTricksPerDeal);
 
     const auto deficit = [](auto req, auto got) { return std::max(0, req - got); };
     const auto declarerFailedTricks = declarer.contractLevel == ContractLevel::Miser

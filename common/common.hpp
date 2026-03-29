@@ -208,6 +208,8 @@ template<typename Value>
     return std::bind_front(std::not_equal_to{}, std::forward<Value>(value));
 }
 
+constexpr auto sum = []<typename Rng>(Rng&& rng) { return rng::fold_left(std::forward<Rng>(rng), 0, std::plus{}); };
+
 template<typename T>
 concept use_refable = !std::is_trivially_copyable_v<T> && !std::is_reference_v<T>;
 

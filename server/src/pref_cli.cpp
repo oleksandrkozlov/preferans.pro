@@ -47,8 +47,6 @@ Usage:
 constexpr auto LogOnNone
     = [](const PlayerIdView playerId) { return OnNone([playerId] { PREF_W("{} not found", PREF_V(playerId)); }); };
 
-constexpr auto sum = []<typename Rng>(Rng&& rng) { return rng::fold_left(std::forward<Rng>(rng), 0, std::plus{}); };
-
 auto listUsers(const GameData& data) -> void
 {
     auto nameWidth = std::size_t{};
