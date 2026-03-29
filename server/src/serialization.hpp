@@ -246,6 +246,7 @@ auto moveVectorToRepeated(std::vector<T>& input, MutRepeatedField& output) -> vo
 [[nodiscard]] inline auto makeDealFinished(
     const ScoreSheet& scoreSheet,
     const std::map<PlayerId, std::int32_t>& lastDealMmr,
+    const ScoreSheet& lastDealScoreSheet,
     const auto isGameOver) -> std::string
 {
     auto result = DealFinished{};
@@ -258,6 +259,14 @@ auto moveVectorToRepeated(std::vector<T>& input, MutRepeatedField& output) -> vo
         }
     }
     for (const auto& [playerId, value] : lastDealMmr) { (*result.mutable_last_deal_mmr())[playerId] = value; }
+    for (const auto& [playerId, score] : lastDealScoreSheet) {
+        auto& data = (*result.mutable_last_deal_score_sheet())[playerId];
+        for (const auto value : score.dump) { data.mutable_dump()->add_values(value); }
+        for (const auto value : score.pool) { data.mutable_pool()->add_values(value); }
+        for (const auto& [whistPlayerId, values] : score.whists) {
+            for (const auto value : values) { (*data.mutable_whists())[whistPlayerId].add_values(value); }
+        }
+    }
     result.set_is_game_over(isGameOver);
     return makeMessage(result).SerializeAsString();
 }

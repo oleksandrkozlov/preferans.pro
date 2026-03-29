@@ -426,7 +426,7 @@ auto removePlayer(Player::Id playerId) -> task<>
     PREF_DI(playerId);
     ctx().players.erase(playerId);
     co_await sendPlayerLeft(std::move(playerId));
-    co_await sendDealFinished({}, true);
+    co_await sendDealFinished({}, {}, true);
     clearGameState();
 }
 
@@ -460,8 +460,9 @@ using TrickComparator = std::function<bool(int, int)>;
         .value_or(false);
 }
 
-auto updateScoreSheetForDeal(const bool isDownThreeTricks) -> void
+auto updateScoreSheetForDeal(const bool isDownThreeTricks) -> ScoreSheet
 {
+    auto lastDealScoreSheet = ScoreSheet{};
     findDeclarerId() | OnValue([&](const Player::Id& declarerId) {
         const auto& declarerPlayer = ctx().players.at(declarerId);
         const auto declarer = Declarer{
@@ -480,9 +481,14 @@ auto updateScoreSheetForDeal(const bool isDownThreeTricks) -> void
         for (const auto& [id, entry] : calculateDealScore(declarer, whisters)) {
             ctx().scoreSheet[id].dump.push_back(entry.dump);
             ctx().scoreSheet[id].pool.push_back(entry.pool);
-            if (id != declarerId) { ctx().scoreSheet[id].whists[declarerId].push_back(entry.whist); }
+            lastDealScoreSheet[id].dump.push_back(entry.dump);
+            lastDealScoreSheet[id].pool.push_back(entry.pool);
+            if (id != declarerId) {
+                ctx().scoreSheet[id].whists[declarerId].push_back(entry.whist);
+                lastDealScoreSheet[id].whists[declarerId].push_back(entry.whist);
+            }
         }
-    }) | OnNone([] { // PassGame
+    }) | OnNone([&] { // PassGame
         const auto players = pref::players();
         const auto minTricksTaken = rng::min(players | rv::transform(&Player::tricksTaken));
         for (const auto& player : players) {
@@ -491,11 +497,15 @@ auto updateScoreSheetForDeal(const bool isDownThreeTricks) -> void
             if (const auto price = progressionTerm(ctx().passGame.round, PassGame::s_progression);
                 player.tricksTaken == 0) {
                 ctx().scoreSheet[player.id].pool.push_back(price);
+                lastDealScoreSheet[player.id].pool.push_back(price);
             } else {
-                ctx().scoreSheet[player.id].dump.push_back((player.tricksTaken - minTricksTaken) * price);
+                const auto dump = (player.tricksTaken - minTricksTaken) * price;
+                ctx().scoreSheet[player.id].dump.push_back(dump);
+                lastDealScoreSheet[player.id].dump.push_back(dump);
             }
         }
     });
+    return lastDealScoreSheet;
 }
 
 auto dealFinished(const bool isDownThreeTricks) -> task<bool>
@@ -520,7 +530,7 @@ auto dealFinished(const bool isDownThreeTricks) -> task<bool>
 
     ctx().gameDuration = pref::durationInSec(ctx().gameStarted);
     PREF_I("gameId: {} duration: {}", ctx().gameId, formatDuration(ctx().gameDuration));
-    updateScoreSheetForDeal(isDownThreeTricks);
+    const auto lastDealScoreSheet = updateScoreSheetForDeal(isDownThreeTricks);
     const auto finalResult = calculateFinalResult(makeFinalScore(ctx().scoreSheet));
     auto playerDealScores = std::vector<std::pair<Player::Id, DealPlayerScore>>{};
     auto lastDealMmr = std::map<Player::Id, std::int32_t>{};
@@ -577,7 +587,7 @@ auto dealFinished(const bool isDownThreeTricks) -> task<bool>
         | rv::transform([](const auto& pool) { return rng::accumulate(pool, 0); });
     const auto isGameOver = rng::all_of(pools, [](const std::int32_t pool) { return pool >= ScoreTarget; });
     PREF_DI(isGameOver, pools);
-    co_await sendDealFinished(lastDealMmr, isGameOver);
+    co_await sendDealFinished(lastDealMmr, lastDealScoreSheet, isGameOver);
     ctx().clear();
     co_return isGameOver;
 }

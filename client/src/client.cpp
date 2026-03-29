@@ -454,12 +454,14 @@ struct VirtualKeyboard {
 
 struct ScoreSheetMenu {
     ScoreSheet score;
+    ScoreSheet lastDealScore;
     std::map<PlayerId, std::int32_t> lastDealMmr;
     bool isVisible{};
 
     auto clear() -> void
     {
         score.clear();
+        lastDealScore.clear();
         lastDealMmr.clear();
     }
 };
@@ -1860,6 +1862,15 @@ auto handleDealFinished(const Message& msg) -> void
     const auto isGameOver = dealFinished->is_game_over();
     PREF_DI(isGameOver);
     ctx().scoreSheet.score = dealFinished->score_sheet() // clang-format off
+        | rv::transform(unpair([](const auto& playerId, const auto& score) {
+        return std::pair{playerId, Score{
+            .dump = score.dump().values() | rng::to_vector,
+            .pool = score.pool().values() | rng::to_vector,
+            .whists = score.whists() | rv::transform(unpair([](const auto& id, const auto& whist) {
+                return std::pair{id, whist.values() | rng::to_vector};
+        })) | rng::to<std::map>}};
+    })) | rng::to<ScoreSheet>; // clang-format on
+    ctx().scoreSheet.lastDealScore = dealFinished->last_deal_score_sheet() // clang-format off
         | rv::transform(unpair([](const auto& playerId, const auto& score) {
         return std::pair{playerId, Score{
             .dump = score.dump().values() | rng::to_vector,
@@ -4258,9 +4269,252 @@ auto drawSettingsMenu() -> void
     });
 }
 
+struct TextLine {
+    std::size_t start{};
+    std::size_t length{};
+    r::Vector2 position;
+};
+
+enum class TextFlow {
+    TopToBottom,
+    BottomToTop,
+};
+
+enum class ShapeRotation {
+    Deg0,
+    Deg90,
+    Deg270,
+};
+
+[[nodiscard]] auto edgeXAtY(const r::Vector2 start, const r::Vector2 end, const float y) -> float
+{
+    return start.x + (y - start.y) * (end.x - start.x) / (end.y - start.y);
+}
+
+[[nodiscard]] auto isSpace(const char ch) -> bool
+{
+    return ch == ' ';
+}
+
+[[nodiscard]] auto isWrapPoint(const char ch) -> bool
+{
+    return ch == ' ' or ch == '.';
+}
+
+[[nodiscard]] auto advanceForRotation(const float width, const float rotationDegrees) -> r::Vector2
+{
+    if (rotationDegrees == 90.f) { return {0.f, width}; }
+    if (rotationDegrees == 270.f) { return {0.f, -width}; }
+    return {width, 0.f};
+}
+
+[[nodiscard]] auto rotationDegrees(const ShapeRotation rotation) -> float
+{
+    switch (rotation) {
+    case ShapeRotation::Deg0: return 0.f;
+    case ShapeRotation::Deg90: return 90.f;
+    case ShapeRotation::Deg270: return 270.f;
+    }
+    return 0.f;
+}
+
+[[nodiscard]] auto rotatePoint(
+    const r::Vector2 point, const r::Vector2 center, const ShapeRotation rotation, const bool inverse = false)
+    -> r::Vector2
+{
+    const auto dx = point.x - center.x;
+    const auto dy = point.y - center.y;
+    switch (rotation) {
+    case ShapeRotation::Deg0: return point;
+    case ShapeRotation::Deg90:
+        return inverse ? r::Vector2{center.x + dy, center.y - dx} : r::Vector2{center.x - dy, center.y + dx};
+    case ShapeRotation::Deg270:
+        return inverse ? r::Vector2{center.x - dy, center.y + dx} : r::Vector2{center.x + dy, center.y - dx};
+    }
+    return point;
+}
+
+[[nodiscard]] auto orderTrapezoidCorners(const std::array<r::Vector2, 4>& points) -> std::array<r::Vector2, 4>
+{
+    auto sorted = points;
+    rng::sort(sorted, [](const auto& lhs, const auto& rhs) {
+        if (lhs.y < rhs.y) { return true; }
+        if (rhs.y < lhs.y) { return false; }
+        return lhs.x < rhs.x;
+    });
+    auto top = std::array{sorted[0], sorted[1]};
+    auto bottom = std::array{sorted[2], sorted[3]};
+    rng::sort(top, {}, &r::Vector2::x);
+    rng::sort(bottom, {}, &r::Vector2::x);
+    return {bottom[0], bottom[1], top[1], top[0]};
+}
+
+[[maybe_unused]] auto drawTextInTrapezoid(
+    const r::Font& font,
+    const std::string& text,
+    const std::string& suffix,
+    const r::Vector2 bottomLeft,
+    const r::Vector2 bottomRight,
+    const r::Vector2 topRight,
+    const r::Vector2 topLeft,
+    const float fontSize,
+    const float spacing,
+    const float padding,
+    const TextFlow flow,
+    const ShapeRotation rotation,
+    const r::Color colorText,
+    const r::Color colorSuffix) -> void
+{
+    const auto combinedText = text + suffix;
+    const auto suffixStart = text.size();
+    const auto center = r::Vector2{
+        (bottomLeft.x + bottomRight.x + topRight.x + topLeft.x) * 0.25f,
+        (bottomLeft.y + bottomRight.y + topRight.y + topLeft.y) * 0.25f,
+    };
+    const auto layoutCorners = orderTrapezoidCorners({
+        rotatePoint(bottomLeft, center, rotation, true),
+        rotatePoint(bottomRight, center, rotation, true),
+        rotatePoint(topRight, center, rotation, true),
+        rotatePoint(topLeft, center, rotation, true),
+    });
+    const auto layoutBottomLeft = layoutCorners[0];
+    const auto layoutBottomRight = layoutCorners[1];
+    const auto layoutTopRight = layoutCorners[2];
+    const auto layoutTopLeft = layoutCorners[3];
+    const auto lineHeight = fontSize + 2.0f;
+    const auto leadingPadding = padding + fontSize * 0.15f;
+    const auto minY = layoutTopLeft.y + padding;
+    const auto maxY = layoutBottomLeft.y - padding - fontSize;
+    const auto trimLeadingIgnored = [](std::string_view value) {
+        while (not value.empty() and isWrapPoint(value.front())) { value.remove_prefix(1); }
+        return value;
+    };
+    const auto nextTrimmedPrefix = [&](std::string_view value) {
+        value = trimLeadingIgnored(value);
+        const auto breakIt = rng::find_if(value, isWrapPoint);
+        if (breakIt == value.end()) { return std::string_view{}; }
+        value.remove_prefix(static_cast<std::size_t>(breakIt - value.begin()) + 1);
+        return trimLeadingIgnored(value);
+    };
+    const auto layoutLines = [&](const std::string_view value, const float startY) {
+        auto lines = std::vector<TextLine>{};
+        auto y = startY;
+        auto textIndex = std::size_t{0};
+        const auto baseOffset = static_cast<std::size_t>(value.data() - combinedText.data());
+        while (textIndex < value.size() and y <= maxY) {
+            const auto lineCenterY = y + fontSize * 0.5f;
+            const auto lineLeft = edgeXAtY(layoutBottomLeft, layoutTopLeft, lineCenterY) + leadingPadding;
+            const auto lineRight = edgeXAtY(layoutBottomRight, layoutTopRight, lineCenterY) - padding;
+            const auto availableWidth = lineRight - lineLeft;
+            if (availableWidth <= 0.0f) { break; }
+            const auto firstNonSpace = rng::find_if_not(value | rv::drop(textIndex), isSpace);
+            textIndex = static_cast<std::size_t>(firstNonSpace - value.begin());
+            if (textIndex >= value.size()) { break; }
+            auto lineEnd = textIndex;
+            auto lastBreak = std::string::npos;
+            while (lineEnd < value.size()) {
+                const auto candidate = std::string{value.substr(textIndex, lineEnd - textIndex + 1)};
+                if (MeasureTextEx(font, candidate.c_str(), fontSize, spacing).x > availableWidth) { break; }
+
+                if (isWrapPoint(value[lineEnd])) { lastBreak = lineEnd; }
+                ++lineEnd;
+            }
+            if (lineEnd == textIndex) { break; }
+            if (lineEnd < value.size() and lastBreak != std::string::npos and lastBreak >= textIndex) {
+                lineEnd = lastBreak;
+            } else {
+                --lineEnd;
+            }
+            auto lineLength = lineEnd - textIndex + 1;
+            while (lineLength > 0 and isSpace(value[textIndex + lineLength - 1])) { --lineLength; }
+            lines.push_back({baseOffset + textIndex, lineLength, {lineLeft, y}});
+            textIndex = lineEnd + 1;
+            y += lineHeight;
+        }
+        return std::pair{lines, textIndex >= value.size()};
+    };
+    const auto layoutLinesBottomToTop = [&](const std::string_view value) {
+        auto lines = std::vector<TextLine>{};
+        auto y = maxY;
+        auto textIndex = std::size_t{0};
+        const auto baseOffset = static_cast<std::size_t>(value.data() - combinedText.data());
+        while (textIndex < value.size() and y >= minY) {
+            const auto lineCenterY = y + fontSize * 0.5f;
+            const auto lineLeft = edgeXAtY(layoutBottomLeft, layoutTopLeft, lineCenterY) + leadingPadding;
+            const auto lineRight = edgeXAtY(layoutBottomRight, layoutTopRight, lineCenterY) - padding;
+            const auto availableWidth = lineRight - lineLeft;
+            if (availableWidth <= 0.0f) { break; }
+            const auto firstNonSpace = rng::find_if_not(value | rv::drop(textIndex), isSpace);
+            textIndex = static_cast<std::size_t>(firstNonSpace - value.begin());
+            if (textIndex >= value.size()) { break; }
+            auto lineEnd = textIndex;
+            auto lastBreak = std::string::npos;
+            while (lineEnd < value.size()) {
+                const auto candidate = std::string{value.substr(textIndex, lineEnd - textIndex + 1)};
+                if (MeasureTextEx(font, candidate.c_str(), fontSize, spacing).x > availableWidth) { break; }
+
+                if (isWrapPoint(value[lineEnd])) { lastBreak = lineEnd; }
+                ++lineEnd;
+            }
+            if (lineEnd == textIndex) { break; }
+            if (lineEnd < value.size() and lastBreak != std::string::npos and lastBreak >= textIndex) {
+                lineEnd = lastBreak;
+            } else {
+                --lineEnd;
+            }
+            auto lineLength = lineEnd - textIndex + 1;
+            while (lineLength > 0 and isSpace(value[textIndex + lineLength - 1])) { --lineLength; }
+            lines.push_back({baseOffset + textIndex, lineLength, {lineLeft, y}});
+            textIndex = lineEnd + 1;
+            y -= lineHeight;
+        }
+        return std::pair{lines, textIndex >= value.size()};
+    };
+
+    auto visibleText = trimLeadingIgnored(std::string_view{combinedText});
+    auto lines = std::vector<TextLine>{};
+    for (;;) {
+        const auto [candidateLines, fits]
+            = flow == TextFlow::BottomToTop ? layoutLinesBottomToTop(visibleText) : layoutLines(visibleText, minY);
+        lines = candidateLines;
+        if (fits or visibleText.empty()) { break; }
+        visibleText = nextTrimmedPrefix(visibleText);
+    }
+
+    const auto angle = rotationDegrees(rotation);
+    for (const auto& line : lines) {
+        const auto lineText = std::string_view{combinedText}.substr(line.start, line.length);
+        const auto drawPosition = rotatePoint(line.position, center, rotation);
+        const auto textLength = std::min(line.length, suffixStart > line.start ? suffixStart - line.start : 0uz);
+        const auto textPart = lineText.substr(0, textLength);
+        const auto suffixPart = lineText.substr(textLength);
+
+        if (not textPart.empty()) {
+            font.DrawText(std::string{textPart}, drawPosition, {0.0f, 0.0f}, angle, fontSize, spacing, colorText);
+        }
+        if (not suffixPart.empty()) {
+            auto suffixPosition = drawPosition;
+            if (not textPart.empty()) {
+                const auto textWidth = font.MeasureText(std::string{textPart}, fontSize, spacing).x;
+                suffixPosition += advanceForRotation(textWidth, angle);
+            }
+            font.DrawText(std::string{suffixPart}, suffixPosition, {0.0f, 0.0f}, angle, fontSize, spacing, colorSuffix);
+        }
+    }
+}
+
 auto drawScoreSheet() -> void
 {
     if (not isVisible(ctx().scoreSheet)) { return; }
+
+    const auto thick = getGuiButtonBorderWidth();
+    const auto borderColor = getGuiColor(BORDER_COLOR_NORMAL);
+    const auto sheetColor = getGuiColor(BASE_COLOR_NORMAL);
+    const auto c = getGuiColor(LABEL, TEXT_COLOR_NORMAL);
+    static const auto fSize = ctx().fontSizeS();
+    static const auto gap = fSize / 4.f;
+    static const auto& font = ctx().fontS;
+    static constexpr auto Padding = 10.0f;
     static constexpr auto fSpace = FontSpacing;
     static constexpr auto rotateL = 90.f;
     static constexpr auto rotateR = 270.f;
@@ -4268,33 +4522,54 @@ auto drawScoreSheet() -> void
     static const auto sheetS = center.y * 1.45f;
     static const auto sheet = r::Vector2{center.x - sheetS * 0.5f, center.y - sheetS * 0.5f};
     static const auto radius = sheetS / 20.f;
-    static const auto posm = 2.f / 9.f;
-    static const auto poss = 5.f / 18.f;
-    static const auto rl = r::Rectangle{sheet.x, sheet.y, sheetS, sheetS};
-    static const auto rm
-        = r::Rectangle{rl.x + sheetS * posm, rl.y, sheetS - sheetS * posm * 2.f, sheetS - sheetS * posm};
-    static const auto rs
-        = r::Rectangle{rl.x + sheetS * poss, rl.y, sheetS - sheetS * poss * 2.f, sheetS - sheetS * poss};
-    static const auto fSize = ctx().fontSizeS();
-    static const auto gap = fSize / 4.f;
-    static const auto& font = ctx().fontS;
-    const auto thick = getGuiButtonBorderWidth();
-    const auto borderColor = getGuiColor(BORDER_COLOR_NORMAL);
-    const auto sheetColor = getGuiColor(BASE_COLOR_NORMAL);
-    const auto c = getGuiColor(LABEL, TEXT_COLOR_NORMAL);
+    static constexpr auto topSegmentRatio = 0.212f;
+    static constexpr auto posm = topSegmentRatio;
+    static constexpr auto poss = 0.5f - topSegmentRatio;
+    static const auto rlSize = r::Vector2{sheetS, sheetS};
+    static const auto rmSize = r::Vector2{sheetS - sheetS * posm * 2.f, sheetS - sheetS * posm};
+    static const auto rsSize = r::Vector2{sheetS - sheetS * poss * 2.f, sheetS - sheetS * poss};
+
+    static const auto a0 = r::Vector2{sheet.x, sheet.y};
+    static const auto rl = r::Rectangle{a0, rlSize};
+    static const auto a1 = r::Vector2{rl.x + sheetS * posm, rl.y};
+    static const auto rm = r::Rectangle{a1, rmSize};
+    static const auto a2 = r::Vector2{rl.x + sheetS * poss, rl.y};
+    static const auto rs = r::Rectangle{a2, rsSize};
+    static const auto b3 = center;
+    static const auto c2 = r::Vector2{a2.x, a2.y + rsSize.y};
+    static const auto bc23 = r::Vector2{(b3.x + c2.x) * 0.5f, (b3.y + c2.y) * 0.5f};
+    static const auto a23 = r::Vector2{bc23.x, a2.y};
+    static const auto a3 = r::Vector2{rl.x + rl.width * 0.5f, rl.y};
+    static const auto c4 = r::Vector2{a2.x + rsSize.x, a2.y + rsSize.y};
+    static const auto bc34 = r::Vector2{(b3.x + c4.x) * 0.5f, (b3.y + c4.y) * 0.5f};
+    static const auto a34 = r::Vector2{bc34.x, a2.y};
+    static const auto a4 = r::Vector2{a2.x + rsSize.x, a2.y};
+    static const auto a5 = r::Vector2{a1.x + rmSize.x, a1.y};
+    static const auto a6 = r::Vector2{a0.x + sheetS, a0.y};
+    static const auto b0 = r::Vector2{rl.x, center.y};
+    static const auto b1 = r::Vector2{rm.x, center.y};
+    static const auto b5 = r::Vector2{rm.x + rm.width, center.y};
+    static const auto b6 = r::Vector2{rl.x + rl.width, center.y};
+    static const auto d1 = r::Vector2{a1.x, a1.y + rmSize.y};
+    static const auto d3 = r::Vector2{center.x, rm.y + rm.height};
+    static const auto d5 = r::Vector2{a1.x + rmSize.x, a1.y + rmSize.y};
+    static const auto e0 = r::Vector2{rl.x + thick, rl.y + rl.height - thick};
+    static const auto e3 = r::Vector2{center.x, rl.y + rl.height};
+    static const auto e6 = r::Vector2{rl.x + rl.width - thick, rl.y + rl.height - thick};
+
     rl.Draw(sheetColor);
     rl.DrawLines(borderColor, thick);
     rs.DrawLines(borderColor, thick);
     rm.DrawLines(borderColor, thick);
-    center.DrawLine({rl.x + thick, rl.y + rl.height - thick}, thick, borderColor);
-    center.DrawLine({rl.x + rl.width - thick, rl.y + rl.height - thick}, thick, borderColor);
-    center.DrawLine({rl.x + rl.width * 0.5f, rl.y}, thick, borderColor);
-    center.DrawLine({rl.x + rl.width * 0.5f, rl.y}, thick, borderColor);
+    center.DrawLine(e0, thick, borderColor);
+    center.DrawLine(e6, thick, borderColor);
+    center.DrawLine(a3, thick, borderColor);
     center.DrawCircle(radius, borderColor);
     center.DrawCircle(radius - thick, sheetColor);
-    r::Vector2{rl.x, center.y}.DrawLine({rm.x, center.y}, thick, borderColor);
-    r::Vector2{rl.x + rl.width, center.y}.DrawLine({rm.x + rm.width, center.y}, thick, borderColor);
-    r::Vector2{center.x, rl.y + rl.height}.DrawLine({center.x, rm.y + rm.height}, thick, borderColor);
+    b0.DrawLine(b1, thick, borderColor);
+    b6.DrawLine(b5, thick, borderColor);
+    e3.DrawLine(d3, thick, borderColor);
+
     static const auto scoreTarget = fmt::format("{}", ScoreTarget);
     static const auto scoreTargetSize = ctx().fontM.MeasureText(scoreTarget, ctx().fontSizeM(), fSpace);
     ctx().fontM.DrawText(
@@ -4304,9 +4579,7 @@ auto drawScoreSheet() -> void
         fSpace,
         c);
     const auto formatSigned = [](const auto value) { return fmt::format("{}{}", value > 0 ? "+" : "", value); };
-    const auto valueColor = [&](const auto value) {
-        return value < 0 ? redColor() : (value > 0 ? greenColor() : c);
-    };
+    const auto valueColor = [&](const auto value) { return value < 0 ? redColor() : (value > 0 ? greenColor() : c); };
     enum class ResultRotation {
         None,
         Left,
@@ -4315,35 +4588,15 @@ auto drawScoreSheet() -> void
     const auto makeCumulativeValues = [](const auto& values) {
         return values | rv::filter(notEqualTo(0)) | rv::partial_sum(std::plus{}) | rng::to_vector;
     };
-    const auto makeValuesText = [&](const auto& values, const r::Color highlightColor) {
+    const auto makeValuesText = [&](const auto& values, const auto& lastDealValues, const r::Color highlightColor) {
         const auto cumulativeValues = makeCumulativeValues(values);
         if (std::empty(cumulativeValues)) { return std::tuple{std::string{}, std::string{}, c}; }
-        auto previousValues = values | rng::to_vector;
-        if (not std::empty(previousValues)) { previousValues.pop_back(); }
-        const auto previousCumulativeValues = makeCumulativeValues(previousValues);
-        const auto wasAddedLastDeal = cumulativeValues != previousCumulativeValues;
+        const auto wasAddedLastDeal = not std::empty(lastDealValues) && lastDealValues.back() != 0;
         const auto lastText = fmt::format("{}", cumulativeValues.back());
         const auto prefixValues = cumulativeValues | rv::take(static_cast<long>(std::size(cumulativeValues) - 1));
-        const auto prefixText = std::empty(prefixValues) ? std::string{} : fmt::format("{}.", fmt::join(prefixValues, "."));
+        const auto prefixText
+            = std::empty(prefixValues) ? std::string{} : fmt::format("{}.", fmt::join(prefixValues, "."));
         return std::tuple{prefixText, lastText, wasAddedLastDeal ? highlightColor : c};
-    };
-    const auto drawValueText = [&](const auto& values,
-                                   const r::Vector2 pos,
-                                   const r::Color highlightColor,
-                                   const ResultRotation rotation = ResultRotation::None) {
-        const auto [prefixText, lastText, lastColor] = makeValuesText(values, highlightColor);
-        if (std::empty(prefixText) and std::empty(lastText)) { return; }
-        if (rotation == ResultRotation::None) {
-            font.DrawText(prefixText, pos, fSize, fSpace, c);
-            const auto prefixSize = font.MeasureText(prefixText, fSize, fSpace);
-            font.DrawText(lastText, {pos.x + prefixSize.x, pos.y}, fSize, fSpace, lastColor);
-            return;
-        }
-        const auto angle = rotation == ResultRotation::Right ? rotateR : rotateL;
-        font.DrawText(prefixText, pos, {}, angle, fSize, fSpace, c);
-        const auto prefixSize = font.MeasureText(prefixText, fSize, fSpace);
-        const auto advance = rotation == ResultRotation::Right ? r::Vector2{0.f, -prefixSize.x} : r::Vector2{0.f, prefixSize.x};
-        font.DrawText(lastText, pos + advance, {}, angle, fSize, fSpace, lastColor);
     };
     const auto rotateOffset = [](const r::Vector2 offset, const ResultRotation rotation) {
         if (rotation == ResultRotation::Right) { return r::Vector2{offset.y, -offset.x}; }
@@ -4354,35 +4607,115 @@ auto drawScoreSheet() -> void
     const auto dealResultFontSize = ctx().fontSizeS();
     const auto dealResultGap = gap * 0.5f;
     const auto [leftId, rightId] = getOpponentIds();
+    static const auto emptyValues = std::vector<std::int32_t>{};
+    static const auto emptyScore = Score{};
     for (const auto& [playerId, score] : ctx().scoreSheet.score) {
-        const auto resultValue = std::invoke([&]() -> std::optional<std::tuple<
-                                                 std::string,
-                                                 r::Vector2,
-                                                 r::Color,
-                                                 std::string,
-                                                 r::Vector2,
-                                                 r::Color>> {
-            if (not finalResult.contains(playerId)) { return std::nullopt; }
-            const auto totalValue = finalResult.at(playerId);
-            const auto dealValue = ctx().scoreSheet.lastDealMmr.contains(playerId) ? ctx().scoreSheet.lastDealMmr.at(playerId)
-                                                                                   : 0;
-            const auto totalText = formatSigned(totalValue);
-            const auto dealText = formatSigned(dealValue);
-            return std::tuple{
-                totalText,
-                ctx().fontM.MeasureText(totalText, ctx().fontSizeM(), fSpace),
-                valueColor(totalValue),
-                dealText,
-                ctx().fontS.MeasureText(dealText, dealResultFontSize, fSpace),
-                valueColor(dealValue)};
-        });
+        const auto& lastDealScore = ctx().scoreSheet.lastDealScore.contains(playerId)
+            ? ctx().scoreSheet.lastDealScore.at(playerId)
+            : emptyScore;
+        const auto resultValue = std::invoke(
+            [&]() -> std::optional<std::tuple<std::string, r::Vector2, r::Color, std::string, r::Vector2, r::Color>> {
+                if (not finalResult.contains(playerId)) { return std::nullopt; }
+                const auto totalValue = finalResult.at(playerId);
+                const auto dealValue
+                    = ctx().scoreSheet.lastDealMmr.contains(playerId) ? ctx().scoreSheet.lastDealMmr.at(playerId) : 0;
+                const auto totalText = formatSigned(totalValue);
+                const auto dealText = formatSigned(dealValue);
+                return std::tuple{
+                    totalText,
+                    ctx().fontM.MeasureText(totalText, ctx().fontSizeM(), fSpace),
+                    valueColor(totalValue),
+                    dealText,
+                    ctx().fontS.MeasureText(dealText, dealResultFontSize, fSpace),
+                    valueColor(dealValue)};
+            });
         if (playerId == ctx().myPlayerId) {
+            { // mid dump
+                const auto [prefixText, lastText, lastColor]
+                    = makeValuesText(score.dump, lastDealScore.dump, yellowColor());
+                drawTextInTrapezoid(
+                    font,
+                    prefixText,
+                    lastText,
+                    c2,
+                    c4,
+                    bc34,
+                    bc23,
+                    ctx().fontSizeS(),
+                    FontSpacing,
+                    Padding,
+                    TextFlow::BottomToTop,
+                    ShapeRotation::Deg0,
+                    c,
+                    lastColor);
+            }
+            { // mid pool
+                const auto [prefixText, lastText, lastColor]
+                    = makeValuesText(score.pool, lastDealScore.pool, yellowColor());
+                drawTextInTrapezoid(
+                    font,
+                    prefixText,
+                    lastText,
+                    d1,
+                    d5,
+                    c4,
+                    c2,
+                    ctx().fontSizeS(),
+                    FontSpacing,
+                    Padding,
+                    TextFlow::TopToBottom,
+                    ShapeRotation::Deg0,
+                    c,
+                    lastColor);
+            }
+            for (const auto& [toWhomWhistId, whist] : score.whists) {
+                const auto& lastDealWhist = lastDealScore.whists.contains(toWhomWhistId)
+                    ? lastDealScore.whists.at(toWhomWhistId)
+                    : emptyValues;
+                if (toWhomWhistId == leftId) { // mid whists to left
+                    const auto [prefixText, lastText, lastColor] = makeValuesText(whist, lastDealWhist, yellowColor());
+                    drawTextInTrapezoid(
+                        font,
+                        prefixText,
+                        lastText,
+                        e0,
+                        e3,
+                        d3,
+                        d1,
+                        ctx().fontSizeS(),
+                        FontSpacing,
+                        Padding,
+                        TextFlow::TopToBottom,
+                        ShapeRotation::Deg0,
+                        c,
+                        lastColor);
+
+                } else if (toWhomWhistId == rightId) { // mid whists to right
+                    const auto [prefixText, lastText, lastColor] = makeValuesText(whist, lastDealWhist, yellowColor());
+                    drawTextInTrapezoid(
+                        font,
+                        prefixText,
+                        lastText,
+                        e3,
+                        e6,
+                        d5,
+                        d3,
+                        ctx().fontSizeS(),
+                        FontSpacing,
+                        Padding,
+                        TextFlow::TopToBottom,
+                        ShapeRotation::Deg0,
+                        c,
+                        lastColor);
+                }
+            }
             if (resultValue) {
                 const auto& [totalText, totalSize, totalColor, dealText, dealSize, dealColor] = *resultValue;
-                const auto totalCenter = center + rotateOffset({0.f, radius + totalSize.y * 0.5f}, ResultRotation::None);
+                const auto totalCenter
+                    = center + rotateOffset({0.f, radius + totalSize.y * 0.5f}, ResultRotation::None);
                 const auto dealCenter = center
-                    + rotateOffset(
-                        {0.f, radius + totalSize.y + dealResultGap + dealSize.y * 0.5f}, ResultRotation::None);
+                    + rotateOffset({0.f, radius + totalSize.y + dealResultGap + dealSize.y * 0.5f},
+                                   ResultRotation::None);
                 ctx().fontM.DrawText(
                     totalText,
                     {totalCenter.x - totalSize.x * 0.5f, totalCenter.y - totalSize.y * 0.5f},
@@ -4396,79 +4729,216 @@ auto drawScoreSheet() -> void
                     fSpace,
                     dealColor);
             }
-            drawValueText(score.dump, {rs.x + radius, rs.y + rs.height - fSize}, yellowColor());
-            // TODO: properly center `poolValues` (here and below) instead of adding `gap * 0.5f`
-            drawValueText(score.pool, {rs.x + gap, rs.y + rs.height + gap * 0.5f}, yellowColor());
+        } else if (playerId == rightId) {
+            { // right dump
+                const auto [prefixText, lastText, lastColor]
+                    = makeValuesText(score.dump, lastDealScore.dump, yellowColor());
+                drawTextInTrapezoid(
+                    font,
+                    prefixText,
+                    lastText,
+                    bc34,
+                    c4,
+                    a4,
+                    a34,
+                    ctx().fontSizeS(),
+                    FontSpacing,
+                    Padding,
+                    TextFlow::BottomToTop,
+                    ShapeRotation::Deg270,
+                    c,
+                    lastColor);
+            }
+            { // right pool
+                const auto [prefixText, lastText, lastColor]
+                    = makeValuesText(score.pool, lastDealScore.pool, yellowColor());
+                drawTextInTrapezoid(
+                    font,
+                    prefixText,
+                    lastText,
+                    c4,
+                    d5,
+                    a5,
+                    a4,
+                    ctx().fontSizeS(),
+                    FontSpacing,
+                    Padding,
+                    TextFlow::TopToBottom,
+                    ShapeRotation::Deg270,
+                    c,
+                    lastColor);
+            }
             for (const auto& [toWhomWhistId, whist] : score.whists) {
-                if (toWhomWhistId == leftId) {
-                    drawValueText(whist, {rm.x + gap, rm.y + rm.height}, yellowColor());
-                } else if (toWhomWhistId == rightId) {
-                    drawValueText(whist, {center.x + gap, rm.y + rm.height}, yellowColor());
+                const auto& lastDealWhist = lastDealScore.whists.contains(toWhomWhistId)
+                    ? lastDealScore.whists.at(toWhomWhistId)
+                    : emptyValues;
+                if (toWhomWhistId == ctx().myPlayerId) { // right whists to mid
+                    const auto [prefixText, lastText, lastColor] = makeValuesText(whist, lastDealWhist, yellowColor());
+                    drawTextInTrapezoid(
+                        font,
+                        prefixText,
+                        lastText,
+                        d5,
+                        e6,
+                        b6,
+                        b5,
+                        ctx().fontSizeS(),
+                        FontSpacing,
+                        Padding,
+                        TextFlow::TopToBottom,
+                        ShapeRotation::Deg270,
+                        c,
+                        lastColor);
+
+                } else if (toWhomWhistId == leftId) { // right whists to left
+                    const auto [prefixText, lastText, lastColor] = makeValuesText(whist, lastDealWhist, yellowColor());
+                    drawTextInTrapezoid(
+                        font,
+                        prefixText,
+                        lastText,
+                        b5,
+                        b6,
+                        a6,
+                        a5,
+                        ctx().fontSizeS(),
+                        FontSpacing,
+                        Padding,
+                        TextFlow::TopToBottom,
+                        ShapeRotation::Deg270,
+                        c,
+                        lastColor);
                 }
             }
-        } else if (playerId == rightId) {
             if (resultValue) {
                 const auto& [totalText, totalSize, totalColor, dealText, dealSize, dealColor] = *resultValue;
-                const auto totalCenter = center + rotateOffset({0.f, radius + totalSize.y * 0.5f}, ResultRotation::Right);
+                const auto totalCenter
+                    = center + rotateOffset({0.f, radius + totalSize.y * 0.5f}, ResultRotation::Right);
                 const auto dealCenter = center
-                    + rotateOffset(
-                        {0.f, radius + totalSize.y + dealResultGap + dealSize.y * 0.5f}, ResultRotation::Right);
+                    + rotateOffset({0.f, radius + totalSize.y + dealResultGap + dealSize.y * 0.5f},
+                                   ResultRotation::Right);
                 ctx().fontM.DrawText(
-                    totalText,
-                    totalCenter,
-                    totalSize * 0.5f,
-                    rotateR,
-                    ctx().fontSizeM(),
-                    fSpace,
-                    totalColor);
+                    totalText, totalCenter, totalSize * 0.5f, rotateR, ctx().fontSizeM(), fSpace, totalColor);
                 ctx().fontS.DrawText(
                     dealText, dealCenter, dealSize * 0.5f, rotateR, dealResultFontSize, fSpace, dealColor);
             }
-            drawValueText(
-                score.dump, {rs.x + rs.width - fSize, rs.y + rs.height - radius}, yellowColor(), ResultRotation::Right);
-            drawValueText(
-                score.pool,
-                {rs.x + rs.width + gap * 0.5f, rs.y + rs.height - gap},
-                yellowColor(),
-                ResultRotation::Right);
+        } else if (playerId == leftId) {
+            { // left dump
+                const auto [prefixText, lastText, lastColor]
+                    = makeValuesText(score.dump, lastDealScore.dump, yellowColor());
+                drawTextInTrapezoid(
+                    font,
+                    prefixText,
+                    lastText,
+                    c2,
+                    bc23,
+                    a23,
+                    a2,
+                    ctx().fontSizeS(),
+                    FontSpacing,
+                    Padding,
+                    TextFlow::BottomToTop,
+                    ShapeRotation::Deg90,
+                    c,
+                    lastColor);
+            }
+            { // left pool
+                const auto [prefixText, lastText, lastColor]
+                    = makeValuesText(score.pool, lastDealScore.pool, yellowColor());
+                drawTextInTrapezoid(
+                    font,
+                    prefixText,
+                    lastText,
+                    d1,
+                    c2,
+                    a2,
+                    a1,
+                    ctx().fontSizeS(),
+                    FontSpacing,
+                    Padding,
+                    TextFlow::TopToBottom,
+                    ShapeRotation::Deg90,
+                    c,
+                    lastColor);
+            }
             for (const auto& [toWhomWhistId, whist] : score.whists) {
-                if (toWhomWhistId == ctx().myPlayerId) {
-                    drawValueText(
-                        whist, {rm.x + rm.width, rm.y + rm.height - gap}, yellowColor(), ResultRotation::Right);
-                } else if (toWhomWhistId == leftId) {
-                    drawValueText(whist, {rm.x + rm.width, center.y - gap}, yellowColor(), ResultRotation::Right);
+                const auto& lastDealWhist = lastDealScore.whists.contains(toWhomWhistId)
+                    ? lastDealScore.whists.at(toWhomWhistId)
+                    : emptyValues;
+                if (toWhomWhistId == ctx().myPlayerId) { // left whists to mid
+                    const auto [prefixText, lastText, lastColor] = makeValuesText(whist, lastDealWhist, yellowColor());
+                    drawTextInTrapezoid(
+                        font,
+                        prefixText,
+                        lastText,
+                        e0,
+                        d1,
+                        b1,
+                        b0,
+                        ctx().fontSizeS(),
+                        FontSpacing,
+                        Padding,
+                        TextFlow::TopToBottom,
+                        ShapeRotation::Deg90,
+                        c,
+                        lastColor);
+                } else if (toWhomWhistId == rightId) { // left whists to right
+                    const auto [prefixText, lastText, lastColor] = makeValuesText(whist, lastDealWhist, yellowColor());
+                    drawTextInTrapezoid(
+                        font,
+                        prefixText,
+                        lastText,
+                        b0,
+                        b1,
+                        a1,
+                        a0,
+                        ctx().fontSizeS(),
+                        FontSpacing,
+                        Padding,
+                        TextFlow::TopToBottom,
+                        ShapeRotation::Deg90,
+                        c,
+                        lastColor);
                 }
             }
-        } else if (playerId == leftId) {
             if (resultValue) {
                 const auto& [totalText, totalSize, totalColor, dealText, dealSize, dealColor] = *resultValue;
-                const auto totalCenter = center + rotateOffset({0.f, radius + totalSize.y * 0.5f}, ResultRotation::Left);
+                const auto totalCenter
+                    = center + rotateOffset({0.f, radius + totalSize.y * 0.5f}, ResultRotation::Left);
                 const auto dealCenter = center
-                    + rotateOffset(
-                        {0.f, radius + totalSize.y + dealResultGap + dealSize.y * 0.5f}, ResultRotation::Left);
+                    + rotateOffset({0.f, radius + totalSize.y + dealResultGap + dealSize.y * 0.5f},
+                                   ResultRotation::Left);
                 ctx().fontM.DrawText(
-                    totalText,
-                    totalCenter,
-                    totalSize * 0.5f,
-                    rotateL,
-                    ctx().fontSizeM(),
-                    fSpace,
-                    totalColor);
+                    totalText, totalCenter, totalSize * 0.5f, rotateL, ctx().fontSizeM(), fSpace, totalColor);
                 ctx().fontS.DrawText(
                     dealText, dealCenter, dealSize * 0.5f, rotateL, dealResultFontSize, fSpace, dealColor);
             }
-            // FIXME: color
-            drawValueText(score.dump, {rs.x + fSize, rl.y + gap}, yellowColor(), ResultRotation::Left);
-            drawValueText(score.pool, {rs.x - gap * 0.5f, rs.y + gap}, yellowColor(), ResultRotation::Left);
-            for (const auto& [toWhomWhistId, whist] : score.whists) {
-                if (toWhomWhistId == ctx().myPlayerId) {
-                    drawValueText(whist, {rm.x, center.y + gap}, yellowColor(), ResultRotation::Left);
-                } else if (toWhomWhistId == rightId) {
-                    drawValueText(whist, {rm.x, rm.y + gap}, yellowColor(), ResultRotation::Left);
-                }
-            }
         }
     }
+
+    // drawDebugDot(a0, "a0");
+    // drawDebugDot(a1, "a1");
+    // drawDebugDot(a2, "a2");
+    // drawDebugDot(a3, "a3");
+    // drawDebugDot(a4, "a4");
+    // drawDebugDot(a5, "a5");
+    // drawDebugDot(a6, "a6");
+    // drawDebugDot(b0, "b0");
+    // drawDebugDot(b1, "b1");
+    // drawDebugDot(b3, "b3");
+    // drawDebugDot(b5, "b5");
+    // drawDebugDot(b6, "b6");
+    // drawDebugDot(c2, "c2");
+    // drawDebugDot(c4, "c4");
+    // drawDebugDot(d1, "d1");
+    // drawDebugDot(d3, "d3");
+    // drawDebugDot(d5, "d5");
+    // drawDebugDot(e0, "e0");
+    // drawDebugDot(e3, "e3");
+    // drawDebugDot(e6, "e6");
+    // drawDebugDot(bc23, "bc23");
+    // drawDebugDot(bc34, "bc34");
+    // drawDebugDot(a23, "a23");
+    // drawDebugDot(a34, "a34");
 }
 
 auto drawOverallScoreboard() -> void
