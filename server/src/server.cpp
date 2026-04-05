@@ -585,7 +585,7 @@ auto dealFinished(const bool isDownThreeTricks) -> task<bool>
         | rv::values
         | rv::transform(&Score::pool)
         | rv::transform([](const auto& pool) { return rng::accumulate(pool, 0); });
-    const auto isGameOver = rng::all_of(pools, [](const std::int32_t pool) { return pool >= ScoreTarget; });
+    const auto isGameOver = sum(pools) >= ScoreTarget * NumberOfPlayers;
     PREF_DI(isGameOver, pools);
     co_await sendDealFinished(lastDealMmr, lastDealScoreSheet, isGameOver);
     ctx().clear();
