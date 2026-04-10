@@ -1878,7 +1878,12 @@ auto handlePlayCard(const Message& msg) -> void
     ctx().player(playerId).hand |= rng::actions::remove_if(equalTo(cardName), &Card::name);
     if (std::empty(ctx().cardsOnTable) and not ctx().passGameTalon.exists()) { ctx().leadSuit = cardSuit(cardName); }
     ctx().cardsOnTable.insert_or_assign(playerId, &card);
-    if (not isCardMoving(playerId)) { startCardMove(playerId, card); }
+    if (not isCardMoving(playerId)) {
+        const auto fromHint = ctx().cardPositions.contains(cardName)
+            ? std::optional{ctx().cardPositions.at(cardName)}
+            : std::nullopt;
+        startCardMove(playerId, card, fromHint);
+    }
     playSound(ctx().sound.placeCard);
 }
 
