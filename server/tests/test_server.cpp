@@ -148,9 +148,9 @@ TEST_CASE("calculateDealScore")
             {{.id = w1, .choice = Whist,                       .tricksTaken = tricksW1},
              {.id = w2, .choice = Whist,                       .tricksTaken = 0}});
         const auto expected = DealScore{
-            {de, {.dump = dump, .pool = pool, .whist = 0}},
-            {w1, {.dump = 0,    .pool = 0,    .whist = 0}},
-            {w2, {.dump = 0,    .pool = 0,    .whist = 0}},
+            {de, {.dump = dump, .pool = pool, .whists = {}}},
+            {w1, {.dump = 0,    .pool = 0,    .whists = {}}},
+            {w2, {.dump = 0,    .pool = 0,    .whists = {}}},
         };
         REQUIRE(actual == expected);
     }
@@ -170,9 +170,9 @@ TEST_CASE("calculateDealScore")
                 {.id = w2, .choice = Whist,                .tricksTaken = tricksW2},
             });
             const auto expected = DealScore{
-                {de, {.dump = 0, .pool = declarerPool, .whist = 0}},
-                {w1, {.dump = 0, .pool = 0,            .whist = whistW1}},
-                {w2, {.dump = 0, .pool = 0,            .whist = whistW2}},
+                {de, {.dump = 0, .pool = declarerPool, .whists = {}}},
+                {w1, {.dump = 0, .pool = 0,            .whists = whistW1 == 0 ? FinalWhists{} : FinalWhists{{de, whistW1}}}},
+                {w2, {.dump = 0, .pool = 0,            .whists = whistW2 == 0 ? FinalWhists{} : FinalWhists{{de, whistW2}}}},
             };
         REQUIRE(actual == expected);
     }
@@ -196,9 +196,9 @@ TEST_CASE("calculateDealScore")
                 {.id = w2, .choice = Whist,                .tricksTaken = tricksW2},
             });
             const auto expected = DealScore{
-                {de, {.dump = dump, .pool = 0, .whist = 0}},
-                {w1, {.dump = 0,    .pool = 0, .whist = whistW1}},
-                {w2, {.dump = 0,    .pool = 0, .whist = whistW2}},
+                {de, {.dump = dump, .pool = 0, .whists = {}}},
+                {w1, {.dump = 0,    .pool = 0, .whists = whistW1 == 0 ? FinalWhists{} : FinalWhists{{de, whistW1}}}},
+                {w2, {.dump = 0,    .pool = 0, .whists = whistW2 == 0 ? FinalWhists{} : FinalWhists{{de, whistW2}}}},
             };
         REQUIRE(actual == expected);
     }
@@ -219,9 +219,9 @@ TEST_CASE("calculateDealScore")
                 {.id = w2, .choice = Pass,                 .tricksTaken = 0},
             });
             const auto expected = DealScore{
-                {de, {.dump = 0,      .pool = declarerPool, .whist = 0}},
-                {w1, {.dump = dumpW1, .pool = 0,            .whist = 0}},
-                {w2, {.dump = 0,      .pool = 0,            .whist = 0}},
+                {de, {.dump = 0,      .pool = declarerPool, .whists = {}}},
+                {w1, {.dump = dumpW1, .pool = 0,            .whists = {}}},
+                {w2, {.dump = 0,      .pool = 0,            .whists = {}}},
             };
         REQUIRE(actual == expected);
     }
@@ -234,9 +234,9 @@ TEST_CASE("calculateDealScore")
                 {.id = w2, .choice = Pass,         .tricksTaken = 2},
             });
             const auto expected = DealScore{
-                {de, {.dump = 0, .pool = 2, .whist = 0}},
-                {w1, {.dump = 2, .pool = 0, .whist = 6}},
-                {w2, {.dump = 0, .pool = 0, .whist = 0}},
+                {de, {.dump = 0, .pool = 2, .whists = {}}},
+                {w1, {.dump = 2, .pool = 0, .whists = {{de, 6}}}},
+                {w2, {.dump = 0, .pool = 0, .whists = {}}},
             };
         REQUIRE(actual == expected);
     }
@@ -257,11 +257,55 @@ TEST_CASE("calculateDealScore")
                 {.id = w2, .choice = Whist, .tricksTaken = 0},
             });
             const auto expected = DealScore{
-                {de, {.dump = 0, .pool = declarerPool, .whist = 0}},
-                {w1, {.dump = dumpW, .pool = 0, .whist = 0}},
-                {w2, {.dump = dumpW, .pool = 0, .whist = 0}},
+                {de, {.dump = 0, .pool = declarerPool, .whists = {}}},
+                {w1, {.dump = dumpW, .pool = 0, .whists = {}}},
+                {w2, {.dump = dumpW, .pool = 0, .whists = {}}},
             };
         REQUIRE(actual == expected);
+    }
+
+    SECTION("declarer with full pool helps an opponent with the largest pool")
+    {
+        ctx().scoreSheet = {
+            {de, {.dump = {}, .pool = {10}, .whists = {}}},
+            {w1, {.dump = {}, .pool = {4}, .whists = {}}},
+            {w2, {.dump = {}, .pool = {2}, .whists = {}}},
+        };
+
+        const auto actual = calculateDealScore(
+            {.id = de, .contractLevel = Six, .tricksTaken = 6},
+            {{.id = w1, .choice = Whist, .tricksTaken = 2}, {.id = w2, .choice = Whist, .tricksTaken = 2}});
+
+        const auto expected = DealScore{
+            {de, {.dump = 0, .pool = 0, .whists = {{w1, 20}}}},
+            {w1, {.dump = 0, .pool = 2, .whists = {{de, 4}}}},
+            {w2, {.dump = 0, .pool = 0, .whists = {{de, 4}}}},
+        };
+
+        REQUIRE(actual == expected);
+        ctx().scoreSheet.clear();
+    }
+
+    SECTION("overflow fills all pools and subtracts the remainder from declarer dump")
+    {
+        ctx().scoreSheet = {
+            {de, {.dump = {10}, .pool = {8}, .whists = {}}},
+            {w1, {.dump = {}, .pool = {8}, .whists = {}}},
+            {w2, {.dump = {}, .pool = {8}, .whists = {}}},
+        };
+
+        const auto actual = calculateDealScore(
+            {.id = de, .contractLevel = Ten, .tricksTaken = 10},
+            {{.id = w1, .choice = Whist, .tricksTaken = 0}, {.id = w2, .choice = Whist, .tricksTaken = 0}});
+
+        const auto expected = DealScore{
+            {de, {.dump = -4, .pool = 2, .whists = {{w1, 20}, {w2, 20}}}},
+            {w1, {.dump = 0, .pool = 2, .whists = {}}},
+            {w2, {.dump = 0, .pool = 2, .whists = {}}},
+        };
+
+        REQUIRE(actual == expected);
+        ctx().scoreSheet.clear();
     }
 }
 // clang-format on

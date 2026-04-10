@@ -222,6 +222,7 @@ enum class GameLang : std::size_t {
     PREF_X(Agreements, "AGREEMENTS", "ДОМОВЛЕНОСТІ", "СОГЛАШЕНИЯ")                                                     \
     PREF_X(Alternative, "Alternative", "Альтернативна", "Альтернативный")                                              \
     PREF_X(Amber, "Amber", "Бурштин", "Янтарь")                                                                        \
+    PREF_X(Assistance, "Assistance", "Допомога", "Помощь")                                                             \
     PREF_X(Arithmetic123, "Arithmetic (1, 2, 3)", "Арифметична (1, 2, 3)", "Арифметическая (1, 2, 3)")                 \
     PREF_X(Bluish, "Bluish", "Блакитний", "Голубоватый")                                                               \
     PREF_X(Catch, PREF_CATCH, "Ловлю", "Ловлю")                                                                        \
@@ -302,6 +303,36 @@ enum class GameLang : std::size_t {
     PREF_X(Ten, "10", "10", "10")                                                                                      \
     PREF_X(TenGame, "Ten game", "Десятерна гра", "Десятерная игра")                                                    \
     PREF_X(Time, "TIME", "ЧАС", "ВРЕМЯ")                                                                               \
+    PREF_X(TooltipAssistance, "“American aid”, by analogy with the Marshall\n"                                         \
+                              "Plan — once a player reaches the maximum\n"                                             \
+                              "pool, they may help others close theirs.\n"                                             \
+                              "If a player who has already closed their\n"                                             \
+                              "pool gains additional pool points, they\n"                                              \
+                              "can “transfer” them to a player who has\n"                                              \
+                              "not yet closed (recording the points for\n"                                             \
+                              "that player instead). This assistance is\n"                                             \
+                              "not free: for each transferred point, the\n"                                            \
+                              "assisting player scores 10 whists.",                                                    \
+                              "\"Американська допомога\", за аналогією з\n"                                            \
+                              "планом Маршалла — після досягнення\n"                                                   \
+                              "максимального розміру пульки гравець може\n"                                            \
+                              "допомагати іншим закривати її. Якщо гравець,\n"                                         \
+                              "який уже закрив пульку, знову отримує очки\n"                                           \
+                              "в пульку, він може \"залити\" їх одному з тих,\n"                                       \
+                              "хто ще не закрився (записати їх йому\n"                                                 \
+                              "замість себе). Допомога не є безкоштовною:\n"                                           \
+                              "за кожне передане очко нараховується\n"                                                 \
+                              "10 вістів на користь того, хто допомагає.",                                             \
+                              "«Американская помощь», по аналогии с\n"                                                 \
+                              "планом Маршалла — после достижения\n"                                                   \
+                              "максимального размера пули игрок может\n"                                               \
+                              "помогать другим закрывать её. Если игрок,\n"                                            \
+                              "уже закрывший пулю, снова получает очки\n"                                              \
+                              "в пулю, он может «залить» их одному из\n"                                               \
+                              "не закрывшихся (записать ему вместо себя).\n"                                           \
+                              "Помощь не бесплатна: за каждое переданное\n"                                            \
+                              "очко начисляется 10 вистов в пользу\n"                                                  \
+                              "помогающего.")                                                                          \
     PREF_X(TooltipVariant, "Sochi is treated as a game against the whister,\n"                                         \
                            "because whisting is difficult in this variant.\n"                                          \
                            "If the whister fails to meet their obligation,\n"                                          \
@@ -317,12 +348,12 @@ enum class GameLang : std::size_t {
                            "вистующий не выполнил своих обязательств, его\n"                                           \
                            "штрафуют за каждую недобранную взятку исходя из\n"                                         \
                            "стоимости объявленной игры.")                                                              \
-    PREF_X(TooltipPoolLength, "The game ends when each player scores at least\n"                                       \
-                              "10 points in the pool.",                                                                \
+    PREF_X(TooltipPoolLength, "The game ends when each player\n"                                                       \
+                              "scores 10 points in the pool.",                                                         \
                               "Гра закінчується, коли кожен із гравців\n"                                              \
-                              "набирає щонайменше 10 очок у пульці.",                                                  \
-                              "Игра заканчивается, когда каждый из игроков\n"                                          \
-                              "набирает не менее 10 очков в пульке.")                                                  \
+                              "набирає 10 очок у пульці.",                                                             \
+                              "Игра заканчивается, когда каждый из\n"                                                  \
+                              "игроков набирает 10 очков в пульке.")                                                   \
     PREF_X(TooltipStalingrad, "On 6♠, whist is mandatory.",                                                            \
                               "При грі 6♠ віст є обов'язковим.",                                                       \
                               "При игре 6♠ вист является обязательным.")                                               \

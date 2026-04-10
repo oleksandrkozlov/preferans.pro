@@ -103,22 +103,23 @@ inline constexpr auto ScoreTarget = 10;
 inline constexpr auto ToString = rng::to<std::string>;
 inline constexpr auto ToLower = rv::transform([](unsigned char c) { return std::tolower(c); });
 
+using FinalWhists = std::map<PlayerId, std::int32_t>;
+
 struct DealScoreEntry {
     auto operator<=>(const DealScoreEntry&) const = default;
 
     std::int32_t dump{};
     std::int32_t pool{};
-    std::int32_t whist{};
+    FinalWhists whists;
 };
 
 // NOLINTNEXTLINE(readability-identifier-naming)
 [[maybe_unused]] auto inline format_as(const DealScoreEntry& entry) -> std::string
 {
-    return fmt::format("dump: {}, pool: {}, whist: {}", entry.dump, entry.pool, entry.whist);
+    return fmt::format("dump: {}, pool: {}, whists: {}", entry.dump, entry.pool, entry.whists);
 }
 
 using AllWhists = std::map<PlayerId, std::vector<std::int32_t>>;
-using FinalWhists = std::map<PlayerId, std::int32_t>;
 
 struct Score {
     std::vector<std::int32_t> dump;

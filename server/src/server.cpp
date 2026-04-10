@@ -490,6 +490,58 @@ using TrickComparator = std::function<bool(int, int)>;
     return level == ContractLevel::Miser ? TrickComparator{std::less_equal{}} : TrickComparator{std::greater_equal{}};
 }
 
+template<std::ranges::input_range Range, typename Pred>
+[[nodiscard]] auto allPoolsSatisfy(const Range& pools, Pred pred) -> bool
+{
+    return rng::all_of(pools, pred);
+}
+
+struct DistributedPoolScore {
+    std::map<Player::Id, std::int32_t> pools;
+    FinalWhists whists;
+    std::int32_t dump{};
+};
+
+auto distributePoolValue(
+    std::map<Player::Id, std::int32_t>& currentPool,
+    const Player::IdView scorePlayerId,
+    const int value,
+    const std::span<const Player::Id> opponentIds) -> DistributedPoolScore
+{
+    assert(currentPool.contains(std::string{scorePlayerId}) and "score player exists");
+    assert(value >= 0 and "distributed pool score is non-negative");
+    assert(rng::all_of(opponentIds, [&](const Player::Id& opponentId) { return opponentId != scorePlayerId; }));
+    assert(allPoolsSatisfy(currentPool | rv::values, [](const std::int32_t pool) { return pool <= ScoreTarget; })
+           and "pool score must not exceed score target");
+
+    auto result = DistributedPoolScore{};
+    auto remaining = value;
+    while (remaining > 0) {
+        if (currentPool.at(std::string{scorePlayerId}) < ScoreTarget) {
+            ++result.pools[std::string{scorePlayerId}];
+            ++currentPool.at(std::string{scorePlayerId});
+            --remaining;
+            continue;
+        }
+
+        const auto recipientIt = rng::max_element(
+            opponentIds,
+            std::less<>{},
+            [&](const Player::Id& playerId) { return currentPool.at(playerId) < ScoreTarget ? currentPool.at(playerId) : -1; });
+        if (recipientIt == std::end(opponentIds) or currentPool.at(*recipientIt) >= ScoreTarget) { break; }
+
+        ++result.pools[*recipientIt];
+        result.whists[*recipientIt] += 10;
+        ++currentPool.at(*recipientIt);
+        --remaining;
+    }
+
+    result.dump = -remaining;
+    assert(allPoolsSatisfy(currentPool | rv::values, [](const std::int32_t pool) { return pool <= ScoreTarget; })
+           and "pool score must not exceed score target");
+    return result;
+}
+
 [[maybe_unused]] auto hasDeclarerFulfilledContract() -> bool
 {
     return findDeclarerId()
@@ -524,21 +576,34 @@ auto updateScoreSheetForDeal(const bool isDownThreeTricks) -> ScoreSheet
             ctx().scoreSheet[id].pool.push_back(entry.pool);
             lastDealScoreSheet[id].dump.push_back(entry.dump);
             lastDealScoreSheet[id].pool.push_back(entry.pool);
-            if (id != declarerId) {
-                ctx().scoreSheet[id].whists[declarerId].push_back(entry.whist);
-                lastDealScoreSheet[id].whists[declarerId].push_back(entry.whist);
+            for (const auto& [targetId, whist] : entry.whists) {
+                ctx().scoreSheet[id].whists[targetId].push_back(whist);
+                lastDealScoreSheet[id].whists[targetId].push_back(whist);
             }
         }
     }) | OnNone([&] { // PassGame
         const auto players = pref::players();
         const auto minTricksTaken = rng::min(players | rv::transform(&Player::tricksTaken));
+        auto currentPool = players
+            | rv::transform([&](const Player& player) { return std::pair{player.id, sum(ctx().scoreSheet[player.id].pool)}; })
+            | rng::to<std::map<Player::Id, std::int32_t>>;
         for (const auto& player : players) {
             assert(ctx().passGame.now);
             assert(ctx().passGame.round != 0);
             if (const auto price = progressionTerm(ctx().passGame.round, PassGame::s_progression);
                 player.tricksTaken == 0) {
-                ctx().scoreSheet[player.id].pool.push_back(price);
-                lastDealScoreSheet[player.id].pool.push_back(price);
+                const auto opponentIds = ctx().tableOrder | rv::filter(notEqualTo(player.id)) | rng::to_vector;
+                const auto distributed = distributePoolValue(currentPool, player.id, price, opponentIds);
+                for (const auto& [playerId, pool] : distributed.pools) {
+                    ctx().scoreSheet[playerId].pool.push_back(pool);
+                    lastDealScoreSheet[playerId].pool.push_back(pool);
+                }
+                for (const auto& [targetId, whist] : distributed.whists) {
+                    ctx().scoreSheet[player.id].whists[targetId].push_back(whist);
+                    lastDealScoreSheet[player.id].whists[targetId].push_back(whist);
+                }
+                ctx().scoreSheet[player.id].dump.push_back(distributed.dump);
+                lastDealScoreSheet[player.id].dump.push_back(distributed.dump);
             } else {
                 const auto dump = (player.tricksTaken - minTricksTaken) * price;
                 ctx().scoreSheet[player.id].dump.push_back(dump);
@@ -640,7 +705,7 @@ auto dealFinished(const bool isDownThreeTricks) -> task<bool>
         | rv::values
         | rv::transform(&Score::pool)
         | rv::transform([](const auto& pool) { return rng::accumulate(pool, 0); });
-    const auto isGameOver = sum(pools) >= ScoreTarget * NumberOfPlayers;
+    const auto isGameOver = allPoolsSatisfy(pools, [](const std::int32_t pool) { return pool == ScoreTarget; });
     PREF_DI(isGameOver, pools);
     co_await sendDealFinished(lastDealMmr, lastDealScoreSheet, isGameOver);
     ctx().clear();
@@ -1311,51 +1376,92 @@ auto Context::countWhistingChoice(const WhistingChoice choice) -> std::ptrdiff_t
     const auto whistersTakenTricks = w1.tricksTaken + w2.tricksTaken;
     assert(0 <= whistersTakenTricks and whistersTakenTricks <= TotalTricksPerDeal);
 
+    const auto totalPool = [](const Player::IdView playerId) {
+        const auto key = std::string{playerId};
+        if (not ctx().scoreSheet.contains(key)) { return 0; }
+        const auto total = sum(ctx().scoreSheet.at(key).pool);
+        assert(0 <= total and total <= ScoreTarget);
+        return total;
+    };
+    auto currentPool = std::map<Player::Id, std::int32_t>{
+        {declarer.id, totalPool(declarer.id)},
+        {w1.id, totalPool(w1.id)},
+        {w2.id, totalPool(w2.id)},
+    };
+    assert(allPoolsSatisfy(currentPool | rv::values, [](const std::int32_t pool) { return pool <= ScoreTarget; })
+           and "pool score must not exceed score target");
+
     const auto deficit = [](auto req, auto got) { return std::max(0, req - got); };
+    const auto addWhists = [](DealScoreEntry& entry, const Player::IdView playerId, const int amount) {
+        if (amount == 0) { return; }
+        entry.whists[std::string{playerId}] += amount;
+    };
     const auto declarerFailedTricks = declarer.contractLevel == ContractLevel::Miser
         ? deficit(declarer.tricksTaken, declarerReqTricks)
         : deficit(declarerReqTricks, declarer.tricksTaken);
 
+    auto result = DealScore{
+        {declarer.id, {}},
+        {w1.id, {}},
+        {w2.id, {}},
+    };
+
     const auto makeDeclarerScore = [&] {
-        auto result = DealScoreEntry{};
+        auto declarerScore = DealScoreEntry{};
         if (compareTricks(declarer.contractLevel)(declarer.tricksTaken, declarerReqTricks)) {
-            result.pool = contractPrice;
+            const auto opponentIds = std::array{w1.id, w2.id};
+            const auto distributed = distributePoolValue(currentPool, declarer.id, contractPrice, opponentIds);
+            for (const auto& [playerId, pool] : distributed.pools) { result.at(playerId).pool = pool; }
+            declarerScore.whists = distributed.whists;
+            declarerScore.dump = distributed.dump;
         } else {
-            result.dump = declarerFailedTricks * contractPrice;
+            declarerScore.dump = declarerFailedTricks * contractPrice;
         }
-        return result;
+        return declarerScore;
     };
 
     const auto makeWhisterScore = [&](const Whister& w) {
-        auto result = DealScoreEntry{};
+        auto whisterScore = DealScoreEntry{};
         if (declarer.contractLevel == ContractLevel::Miser
             or declarer.contractLevel == ContractLevel::Ten
             or declarer.isDownThreeTricks) {
-            return result;
+            return whisterScore;
         }
         if (w.choice == WhistingChoice::Whist) {
             const auto effectiveTricksTaken =
                 rng::any_of(whisters, equalTo(WhistingChoice::Pass), &Whister::choice) ? whistersTakenTricks : w.tricksTaken;
-            result.whist += effectiveTricksTaken * contractPrice;
+            addWhists(whisterScore, declarer.id, effectiveTricksTaken * contractPrice);
             if (deficit(twoWhistersReqTricks, whistersTakenTricks) > 0) {
                 const auto reqTricks = rng::all_of(whisters, equalTo(WhistingChoice::Whist), &Whister::choice)
                     ? oneWhisterReqTricks(declarer.contractLevel)
                     : twoWhistersReqTricks;
-                result.dump += deficit(reqTricks, effectiveTricksTaken) * contractPrice;
+                whisterScore.dump += deficit(reqTricks, effectiveTricksTaken) * contractPrice;
             }
         } else if (w.choice == WhistingChoice::HalfWhist) {
-            result.whist += static_cast<std::int32_t>(
-                0.5f * static_cast<float>(twoWhistersReqTricks) * static_cast<float>(contractPrice));
+            addWhists(
+                whisterScore,
+                declarer.id,
+                static_cast<std::int32_t>(0.5f * static_cast<float>(twoWhistersReqTricks) * static_cast<float>(contractPrice)));
         }
-        result.whist += declarerFailedTricks * contractPrice;
-        return result;
+        addWhists(whisterScore, declarer.id, declarerFailedTricks * contractPrice);
+        return whisterScore;
     };
 
-    return {
-        {declarer.id, makeDeclarerScore()},
-        {w1.id, makeWhisterScore(w1)},
-        {w2.id, makeWhisterScore(w2)},
-    };
+    const auto declarerScore = makeDeclarerScore();
+    result.at(declarer.id).dump = declarerScore.dump;
+    result.at(declarer.id).whists = declarerScore.whists;
+
+    const auto w1Score = makeWhisterScore(w1);
+    result.at(w1.id).dump = w1Score.dump;
+    result.at(w1.id).whists = w1Score.whists;
+
+    const auto w2Score = makeWhisterScore(w2);
+    result.at(w2.id).dump = w2Score.dump;
+    result.at(w2.id).whists = w2Score.whists;
+
+    assert(allPoolsSatisfy(currentPool | rv::values, [](const std::int32_t pool) { return pool <= ScoreTarget; })
+           and "pool score must not exceed score target");
+    return result;
 }
 
 auto createAcceptor(

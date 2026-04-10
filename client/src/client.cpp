@@ -2362,6 +2362,7 @@ auto drawAgreements(const float reservedTop) -> void
         const auto agreements = std::array{
             agreement(GameText::Variant, GameText::Sochi, GameText::TooltipVariant),
             agreement(GameText::PoolLength, GameText::Ten, GameText::TooltipPoolLength),
+            agreement(GameText::Assistance, GameText::Yes, GameText::TooltipAssistance),
             agreement(GameText::Stalingrad, GameText::Yes, GameText::TooltipStalingrad),
             agreement(GameText::TenGame, GameText::Checked, GameText::TooltipTenGame),
             agreement(GameText::Whist, GameText::ResponsibleGreedy, GameText::TooltipWhist),
@@ -3780,7 +3781,7 @@ auto handleCardClick(
     const auto cyrillic = rv::closed_iota(0x0410, 0x044F); // А..я
     const auto extras = makeCodepoints( // clang-format off
         "Ё", "ё", "Ґ", "ґ", "Є", "є", "І", "і", "Ї", "ї", "è", "é",
-        "♠", "♣", "♦", "♥", "’", "—", "⌫", "⇪", "␣",
+        "♠", "♣", "♦", "♥", "’", "—", "⌫", "⇪", "␣", "“", "”", "«", "»",
         PREF_SPADE, PREF_CLUB, PREF_HEART, PREF_DIAMOND, PREF_ARROW_RIGHT, PREF_FOREHAND_SIGN,
         PREF_NUMBER_01, PREF_NUMBER_02, PREF_NUMBER_03, PREF_NUMBER_04, PREF_NUMBER_05,
         PREF_NUMBER_06, PREF_NUMBER_07, PREF_NUMBER_08, PREF_NUMBER_09, PREF_NUMBER_10
@@ -4627,11 +4628,12 @@ auto drawScoreSheet() -> void
     const auto makeCumulativeValues = [](const auto& values) {
         return values | rv::filter(notEqualTo(0)) | rv::partial_sum(std::plus{}) | rng::to_vector;
     };
-    const auto makeValuesText = [&](const auto& values, const auto& lastDealValues, const r::Color highlightColor) {
+    const auto makeValuesText = [&](const auto& values, const auto& lastDealValues, const r::Color highlightColor, const bool markTarget = false) {
         const auto cumulativeValues = makeCumulativeValues(values);
         if (std::empty(cumulativeValues)) { return std::tuple{std::string{}, std::string{}, c}; }
         const auto wasAddedLastDeal = not std::empty(lastDealValues) && lastDealValues.back() != 0;
-        const auto lastText = fmt::format("{}", cumulativeValues.back());
+        const auto reachedTarget = markTarget && cumulativeValues.back() == ScoreTarget;
+        const auto lastText = fmt::format("{}{}", cumulativeValues.back(), reachedTarget ? ">>" : "");
         const auto prefixValues = cumulativeValues | rv::take(static_cast<long>(std::size(cumulativeValues) - 1));
         const auto prefixText
             = std::empty(prefixValues) ? std::string{} : fmt::format("{}.", fmt::join(prefixValues, "."));
@@ -4690,7 +4692,7 @@ auto drawScoreSheet() -> void
             }
             { // mid pool
                 const auto [prefixText, lastText, lastColor]
-                    = makeValuesText(score.pool, lastDealScore.pool, yellowColor());
+                    = makeValuesText(score.pool, lastDealScore.pool, yellowColor(), true);
                 drawTextInTrapezoid(
                     font,
                     prefixText,
@@ -4790,7 +4792,7 @@ auto drawScoreSheet() -> void
             }
             { // right pool
                 const auto [prefixText, lastText, lastColor]
-                    = makeValuesText(score.pool, lastDealScore.pool, yellowColor());
+                    = makeValuesText(score.pool, lastDealScore.pool, yellowColor(), true);
                 drawTextInTrapezoid(
                     font,
                     prefixText,
@@ -4882,7 +4884,7 @@ auto drawScoreSheet() -> void
             }
             { // left pool
                 const auto [prefixText, lastText, lastColor]
-                    = makeValuesText(score.pool, lastDealScore.pool, yellowColor());
+                    = makeValuesText(score.pool, lastDealScore.pool, yellowColor(), true);
                 drawTextInTrapezoid(
                     font,
                     prefixText,
