@@ -3205,8 +3205,14 @@ auto drawOfferButton() -> void
                                 : (isRight(drawPosition) ? ctx().rightCardCount : ctx().leftCardCount);
 }
 
+[[nodiscard]] auto shouldHideBid(const Player& player) -> bool
+{
+    return player.bid == PREF_PASS and ctx().stage != GameStage::BIDDING and ctx().bidding.rank != AllRanks;
+}
+
 auto drawBid(const r::Vector2& pos, const Player& player, const Shift shift) -> bool
 {
+    if (shouldHideBid(player)) { return false; }
     return withGuiFont(ctx().fontL, [&] {
         return withGuiStyle(DEFAULT, TEXT_SIZE, static_cast<int>(ctx().fontSizeM()), [&] {
             using enum Shift;
