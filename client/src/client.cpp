@@ -655,6 +655,10 @@ struct Mic {
     bool isMuted = false;
 };
 
+struct Voice {
+    bool isMuted = false;
+};
+
 [[nodiscard]] auto makeSound(const std::string_view filename) -> std::optional<r::Sound>
 {
     if (const auto path = sounds(filename); std::filesystem::exists(path)) { return {path}; }
@@ -706,6 +710,7 @@ struct Context {
     r::AudioDevice audio;
     Sound sound;
     Mic microphone;
+    Voice voice;
     PlayerId myPlayerId;
     PlayerName myPlayerName;
     std::string password;
@@ -3812,6 +3817,8 @@ auto handleCardClick(
         HandshakeIcon,
         MicOnIcon,
         MicOffIcon,
+        VoiceOnIcon,
+        VoiceOffIcon,
         KeyboardIcon);
 }
 
@@ -4033,10 +4040,34 @@ auto drawStatButton() -> void
     });
 }
 
+auto toggleVoice() -> void
+{
+    ctx().voice.isMuted = not ctx().voice.isMuted;
+    // clang-format off
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdollar-in-identifier-extension"
+    EM_ASM({
+        const mute = $0 !== 0;
+        if (Module.prefAudio && Module.prefAudio.audios) {
+            Module.prefAudio.audios.forEach(function(audio) {
+                audio.muted = mute;
+            });
+        }
+        window.prefVoiceMuted = mute;
+    }, ctx().voice.isMuted);
+#pragma GCC diagnostic pop
+    // clang-format on
+}
+
+auto drawVoiceButton() -> void
+{
+    drawToolbarButton(1, ctx().voice.isMuted ? VoiceOffIcon : VoiceOnIcon, [&] { toggleVoice(); }, false, false);
+}
+
 auto drawMicButton() -> void
 {
     withGuiState(STATE_DISABLED, ctx().microphone.isError, [&] {
-        drawToolbarButton(1, ctx().microphone.isMuted ? MicOffIcon : MicOnIcon, [&] { toggleMic(); }, false, false);
+        drawToolbarButton(2, ctx().microphone.isMuted ? MicOffIcon : MicOnIcon, [&] { toggleMic(); }, false, false);
     });
 }
 
@@ -4044,7 +4075,7 @@ auto drawLadderButton() -> void
 {
     withGuiState(STATE_PRESSED, ctx().ladderMenu.isVisible, [&] {
         drawToolbarButton(
-            2, LadderIcon, [&] { ctx().ladderMenu.isVisible = not ctx().ladderMenu.isVisible; }, false, false);
+            3, LadderIcon, [&] { ctx().ladderMenu.isVisible = not ctx().ladderMenu.isVisible; }, false, false);
     });
 }
 
@@ -5367,6 +5398,7 @@ auto initAudioEngine() -> void
                                 audio.autoplay = true;
                                 audio.controls = false;
                                 audio.style.display = 'none';
+                                if (window.prefVoiceMuted) { audio.muted = true; }
                                 audios.set(remoteId, audio);
                                 document.body.appendChild(audio);
                             }
@@ -5437,7 +5469,7 @@ auto initAudioEngine() -> void
                     window.stream = null;
                 }
 
-                return { setSelf, setPeers, handleSignal, ensurePeer, closePeer, stopLocalStream};
+                return { setSelf, setPeers, handleSignal, ensurePeer, closePeer, stopLocalStream, audios};
             })();
         }
         Module.prefAudio.setSelf(UTF8ToString($0));
@@ -5574,6 +5606,7 @@ auto updateDrawFrame([[maybe_unused]] void* ud) -> void
     if (ctx().isLoggedIn) {
         drawOverallScoreboardButton();
         drawMicButton();
+        drawVoiceButton();
         drawLadderButton();
         drawStatButton();
     }
