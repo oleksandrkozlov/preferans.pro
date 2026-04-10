@@ -868,6 +868,12 @@ auto startPlayingFromForehand() -> task<>
     co_await sendPlayerTurn(decidePlayerTurn());
 }
 
+auto handleHowToPlayChoice(Player& player) -> task<>
+{
+    if (player.howToPlayChoice == PREF_OPENLY) { co_await openCardsAndLetAnotherWhisterPlay(); }
+    co_await startPlayingFromForehand();
+}
+
 auto handleWhisting(const Message& msg) -> task<>
 {
     using enum WhistingChoice;
@@ -931,6 +937,12 @@ auto handleWhisting(const Message& msg) -> task<>
     if (bothWhist) { co_return co_await startPlayingFromForehand(); }
     if (oneWhist) {
         if (choice != PREF_WHIST) { setWhoseTurn(playerByWhistingChoice(ctx().players, Whist).id); }
+        if (makeContractLevel(declarer.bid) == ContractLevel::Ten) {
+            auto& whister = playerByWhistingChoice(ctx().players, Whist);
+            whister.howToPlayChoice = PREF_OPENLY;
+            co_await sendHowToPlay(whister.id, whister.howToPlayChoice);
+            co_return co_await handleHowToPlayChoice(whister);
+        }
         ctx().stage = HOW_TO_PLAY;
         co_return co_await sendPlayerTurn(decidePlayerTurn());
     }
@@ -950,8 +962,7 @@ auto handleHowToPlay(const Message& msg) -> task<>
     auto& player = ctx().player(playerId);
     player.howToPlayChoice = std::move(choice);
     co_await forwardToAllExcept(msg, playerId);
-    if (player.howToPlayChoice == PREF_OPENLY) { co_await openCardsAndLetAnotherWhisterPlay(); }
-    co_await startPlayingFromForehand();
+    co_await handleHowToPlayChoice(player);
 }
 
 auto resetPassGameIfNeeded() -> void

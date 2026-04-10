@@ -180,6 +180,11 @@ inline auto sendWhisting(const Player::IdView playerId, const std::string_view c
     return sendToAll(makeWhisting(playerId, choice));
 }
 
+inline auto sendHowToPlay(const Player::IdView playerId, const std::string_view choice) -> task<>
+{
+    return sendToAll(makeHowToPlay(playerId, choice));
+}
+
 inline auto sendOpenWhistPlayToOne(
     const ChannelPtr& ch, const Player::IdView activeWhisterId, const Player::IdView passiveWhisterId) -> task<>
 {
