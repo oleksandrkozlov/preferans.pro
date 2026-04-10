@@ -2,6 +2,7 @@
 // Copyright (c) 2025 Oleksandr Kozlov
 
 #include "client.hpp"
+#include "version.hpp"
 
 #include "common/common.hpp"
 #include "common/logger.hpp"
@@ -5435,6 +5436,20 @@ auto drawPingAndFps() -> void
     drawPing({fpsX, y}, font, fontSize, fontSpacing);
 }
 
+auto drawVersion() -> void
+{
+    if (not ctx().isLoggedIn or ctx().isGameStarted) { return; }
+    static constexpr auto paddingY = BorderMargin * 0.25f;
+    static const auto versionText = r::Text{
+        fmt::format("v{}", ClientVersion),
+        static_cast<float>(ctx().fontS.baseSize),
+        Fade(getGuiColor(TEXT_COLOR_NORMAL), 0.75f),
+        ctx().fontS,
+        FontSpacing};
+    static const auto size = versionText.MeasureEx();
+    versionText.Draw({VirtualW - BorderMargin - size.x, VirtualH - size.y - paddingY});
+}
+
 auto handleMousePress() -> void
 {
     if (not r::Mouse::IsButtonPressed(MOUSE_LEFT_BUTTON) or ctx().isGameFreezed) { return; }
@@ -5537,6 +5552,7 @@ auto updateDrawFrame([[maybe_unused]] void* ud) -> void
     drawVirtualKeyboardButton();
     drawFullScreenButton();
     drawPingAndFps();
+    drawVersion();
     drawAgreements(reservedTop);
     if (ctx().isGameStarted and ctx().isLoggedIn and ctx().areAllPlayersJoined()) { drawSpeechBubbleMenu(); }
     if (ctx().isLoggedIn) { drawOverallScoreboard(); }

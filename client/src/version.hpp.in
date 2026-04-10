@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Oleksandr Kozlov
+
+#pragma once
+
+#include "common/common.hpp"
+
+#include <string_view>
+
+namespace pref {
+
+inline constexpr auto ClientVersion = "@PREF_CLIENT_VERSION@"sv;
+
+} // namespace pref

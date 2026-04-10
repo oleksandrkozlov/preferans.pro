@@ -3,7 +3,7 @@
 # Copyright (c) 2025 Oleksandr Kozlov
 
 cmake_minimum_required(VERSION 3.16.3)
-project(client C CXX)
+project(client VERSION 0.3.0 LANGUAGES C CXX)
 
 list(PREPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/../cmake)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -27,6 +27,24 @@ add_subdirectory(deps/protobuf)
 add_subdirectory(deps/spdlog)
 add_subdirectory(deps/gsl)
 add_subdirectory(deps/date)
+
+find_package(Git QUIET)
+set(PREF_CLIENT_GIT_HASH "unknown")
+if(GIT_FOUND)
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/..
+        OUTPUT_VARIABLE PREF_CLIENT_GIT_HASH
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+endif()
+if(PREF_CLIENT_GIT_HASH STREQUAL "")
+    set(PREF_CLIENT_GIT_HASH "unknown")
+endif()
+
+set(PREF_CLIENT_VERSION "${PROJECT_VERSION}+${PREF_CLIENT_GIT_HASH}")
+configure_file(src/version.hpp.in generated/version.hpp @ONLY)
 
 add_executable(client src/client.cpp ../proto/pref.pb.cc)
 
@@ -100,6 +118,7 @@ target_include_directories(client SYSTEM PUBLIC ${CMAKE_SOURCE_DIR}/deps/spdlog/
 target_include_directories(client SYSTEM PUBLIC ${CMAKE_SOURCE_DIR}/deps/gsl/include)
 target_include_directories(client SYSTEM PUBLIC ${CMAKE_SOURCE_DIR}/deps/docopt.cpp)
 target_include_directories(client SYSTEM PUBLIC ${CMAKE_SOURCE_DIR}/deps/date/include)
+target_include_directories(client PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 target_include_directories(client PRIVATE ${PROJECT_SOURCE_DIR}/..)
 
 set_target_properties(client PROPERTIES SUFFIX ".html")
