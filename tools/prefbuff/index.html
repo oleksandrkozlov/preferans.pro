@@ -1250,7 +1250,7 @@
     function renderUsers() {
       const usersEl = document.getElementById("users");
       usersEl.innerHTML = state.users.map(u => {
-        const mmrText = `${u.total_mmr > 0 ? "+" : ""}${u.total_mmr}`;
+        const mmrText = String(u.total_mmr);
         return `
         <div class="list-item ${u.player_id === state.selectedUserId ? "active" : ""}" data-user-id="${esc(u.player_id)}">
           <div class="name">${esc(u.player_name)}</div>
@@ -1348,7 +1348,7 @@
         const sign = mmr > 0 ? "+" : "";
         const result = `${resultLabel} (${sign}${mmr})`;
         const mmrTotal = Number(mmrDiffById.get(g.id) || 0);
-        const mmrTotalText = `${mmrTotal > 0 ? "+" : ""}${mmrTotal}`;
+        const mmrTotalText = mmrTotal > 0 ? `\u00A0${mmrTotal}` : String(mmrTotal);
         const { date, time } = formatDateTime(g.timestamp);
         return {
           id: g.id,
@@ -1587,7 +1587,7 @@
         if (!labelIndices.has(i)) return "";
         const labelY = y <= padY + 12 ? y + 11 : y - 6;
         const baseline = y <= padY + 12 ? "hanging" : "auto";
-        const labelText = value > 0 ? `+${value}` : `${value}`;
+        const labelText = String(value);
         const isFirst = i === 0;
         const isLast = i === pointData.length - 1;
         const labelX = x;
@@ -1715,7 +1715,7 @@
       }
       statTooltipEl?.classList.remove("score-good", "score-bad", "score-mid");
       statTooltipEl?.classList.add(scoreClass(String(Math.round(hoveredValue))));
-      showStatTooltip(`${formatSignedInteger(Math.round(hoveredValue))} MMR`, e);
+      showStatTooltip(`${Math.round(hoveredValue)} MMR`, e);
     }
 
     function hideTrendTooltip(e) {
@@ -1807,7 +1807,7 @@
             </div>
             <div class="summary-card" data-tip="Net MMR change.">
               <div class="summary-label">MMR</div>
-              <div class="summary-value ${scoreClass(String(totals.totalMmr))}">${totals.totalMmr > 0 ? "+" : ""}${totals.totalMmr}</div>
+              <div class="summary-value ${scoreClass(String(totals.totalMmr))}">${totals.totalMmr}</div>
             </div>
             <div class="summary-card" data-tip="Percentage of games with a positive MMR change.">
               <div class="summary-label">Win Rate</div>

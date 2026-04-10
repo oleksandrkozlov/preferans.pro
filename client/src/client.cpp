@@ -5023,7 +5023,7 @@ auto drawOverallScoreboard() -> void
                         if (scheme == "dracula") { return greenColor(); }
                         return r::Color::Lime();
                     }
-                    if ((cell.starts_with('-') and "-" != cell)
+                    if ((cell.starts_with('-') and "-" != cell and not cell.contains('/'))
                         or cell.starts_with(ctx().localizeText(GameText::Lost))
                         or (cell.contains('%') and std::stoi(cell) <= BadWinrate)) {
                         if (scheme == "bluish") { return r::Color::Maroon(); }
@@ -5041,7 +5041,8 @@ auto drawOverallScoreboard() -> void
                     windowBox.x + cellSize.y + cellSize.x * static_cast<float>(i),
                     windowBox.y + cellSize.y * (2.f + static_cast<float>(j))};
                 if (j == 0 or j == 1) {
-                    GuiStatusBar(r::Rectangle{cellPos, cellSize}, cell.c_str());
+                    const auto c = i == 4 and not cell.starts_with('-') ? std::string{" "} + cell : cell;
+                    GuiStatusBar(r::Rectangle{cellPos, cellSize}, c.c_str());
                     continue;
                 }
                 if (j == 2) {
@@ -5053,7 +5054,8 @@ auto drawOverallScoreboard() -> void
                 }
                 withGuiStyle(LABEL, TEXT_PADDING, GuiGetStyle(STATUSBAR, TEXT_PADDING), [&] {
                     withGuiStyle(LABEL, TEXT_COLOR_NORMAL, color, [&] {
-                        GuiLabel(r::Rectangle{cellPos + panelScroll, cellSize}, cell.c_str());
+                        const auto c = i == 4 and cell.starts_with('+') ? std::string{" "} + cell.substr(1) : cell;
+                        GuiLabel(r::Rectangle{cellPos + panelScroll, cellSize}, c.c_str());
                     });
                 });
             }
@@ -5083,7 +5085,7 @@ auto drawLadder() -> void
         for (auto&& [i, player] : rankedPlayers | rv::enumerate) {
             rows.emplace_back(
                 fmt::format("{}. {}", i + 1, player.first),
-                fmt::format("{}{}", player.second > 0 ? "+" : "", player.second),
+                fmt::format("{}{}", player.second > 0 ? " " : "", player.second),
                 player.second);
         }
         auto leftColW = 0.f;
