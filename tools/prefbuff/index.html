@@ -34,7 +34,7 @@
     }
     .app {
       display: grid;
-      grid-template-columns: 150px 1fr;
+      grid-template-columns: 131px 1fr;
       min-height: 100vh;
     }
     .sidebar {
@@ -48,7 +48,7 @@
       padding: 16px;
       overflow: auto;
     }
-    h1 { margin: 0 0 6px; font-size: 24px; text-align: center; cursor: pointer; }
+    h1 { margin: 0 0 6px; font-size: 20px; text-align: center; cursor: pointer; }
     .sub { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
     .list-item {
       border: 1px solid var(--table-border);
@@ -105,12 +105,17 @@
       font-weight: 700;
     }
     .summary-value {
-      font-size: 18px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 0 6px;
+      font-size: clamp(15px, 1.2vw, 18px);
       font-weight: 700;
       line-height: 1.2;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+      overflow-wrap: anywhere;
     }
     .games-block {
       margin-bottom: 14px;
@@ -153,11 +158,9 @@
       margin-bottom: 10px;
     }
     .hand-stats-grid {
-      display: flex;
-      flex-wrap: nowrap;
-      overflow-x: auto;
+      display: grid;
+      grid-template-columns: repeat(9, minmax(0, 1fr));
       gap: 8px;
-      padding-bottom: 2px;
     }
     .hand-stat-card {
       border: 1px solid var(--table-border);
@@ -165,7 +168,6 @@
       background: var(--table-bg);
       padding: 8px;
       min-width: 0;
-      flex: 1 1 0;
     }
     .hand-stat-card[data-action]:hover {
       border-color: var(--accent);
@@ -186,15 +188,20 @@
       font-weight: 700;
     }
     .hand-stat-value {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 0 6px;
       color: #d7def5;
-      font-size: 16px;
+      font-size: clamp(14px, 1.05vw, 16px);
       font-weight: 700;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      white-space: normal;
+      overflow: visible;
+      text-overflow: clip;
+      overflow-wrap: anywhere;
     }
     .hand-stat-delta {
-      margin-left: 6px;
+      margin-left: 0;
       font-size: 12px;
       font-weight: 700;
     }
@@ -205,9 +212,8 @@
       margin-top: 2px;
       font-size: 11px;
       color: var(--muted);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
     .mmr-suffix {
       font-size: 0.75em;
@@ -357,12 +363,15 @@
       .app { grid-template-columns: 1fr; }
       .sidebar { border-right: none; border-bottom: 1px solid var(--line); max-height: 36vh; }
       .summary-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .hand-stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }
     @media (max-width: 640px) {
       .summary-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .hand-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 460px) {
       .summary-cards { grid-template-columns: 1fr; }
+      .hand-stats-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -1306,7 +1315,7 @@
               <div class="summary-value ${scoreClass(totals.resultText)}">${totals.winRate}%</div>
             </div>
             <div class="summary-card ${state.activeHandFilter === "passing" ? "is-active" : ""}" data-action="filter-passing" data-tip="Percentage of deals where all players passed.&#10;↑ - percentage of those deals with positive MMR.">
-              <div class="summary-label">Passing Rate</div>
+              <div class="summary-label">All Pass</div>
               <div class="summary-value">${state.handStatsLoading ? "..." : (state.handStats ? state.handStats.passingRatePct : "-")}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats?.passingMadePct || "")}">${state.handStats ? state.handStats.passingMadePct : "-"}</span></span></div>
             </div>
             <div class="summary-card ${state.activeHandFilter === "miser" ? "is-active" : ""}" data-action="filter-miser" data-tip="Number of deals played as misère.&#10;↑ - percentage of those deals with positive MMR.">
@@ -1318,11 +1327,11 @@
               <div class="summary-value">${esc(totals.totalDPW)}</div>
             </div>
             <div class="summary-card" data-tip="Average duration per game.">
-              <div class="summary-label">Avg Duration</div>
+              <div class="summary-label">Avg Dur.</div>
               <div class="summary-value">${esc(totals.avgDuration)}</div>
             </div>
             <div class="summary-card" data-tip="Combined duration of all games.">
-              <div class="summary-label">Total Duration</div>
+              <div class="summary-label">Total Dur.</div>
               <div class="summary-value">${esc(totals.totalDuration)}</div>
             </div>
           </div>
@@ -1335,9 +1344,9 @@
                   ? `<div class="empty">No hands found for this user.</div>`
                   : `
                     <div class="hand-stats-grid">
-                      <div class="hand-stat-card ${state.activeHandFilter === "declarer" ? "is-active" : ""}" data-action="filter-declarer" data-tip="Percentage of deals played as declarer.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Declarer Rate</div><div class="hand-stat-value">${state.handStats.declarerPct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.declarerMadePct)}">${state.handStats.declarerMadePct}</span></span></div></div>
-                      <div class="hand-stat-card ${state.activeHandFilter === "pass" ? "is-active" : ""}" data-action="filter-pass" data-tip="Percentage of deals passed.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Pass Rate</div><div class="hand-stat-value">${state.handStats.passRatePct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.passMadePct)}">${state.handStats.passMadePct}</span></span></div></div>
-                      <div class="hand-stat-card ${state.activeHandFilter === "whist" ? "is-active" : ""}" data-action="filter-whist" data-tip="Percentage of deals played as whist/half-whist.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Whist Rate</div><div class="hand-stat-value">${state.handStats.whistRatePct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.whistMadePct)}">${state.handStats.whistMadePct}</span></span></div></div>
+                      <div class="hand-stat-card ${state.activeHandFilter === "declarer" ? "is-active" : ""}" data-action="filter-declarer" data-tip="Percentage of deals played as declarer.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Declarer</div><div class="hand-stat-value">${state.handStats.declarerPct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.declarerMadePct)}">${state.handStats.declarerMadePct}</span></span></div></div>
+                      <div class="hand-stat-card ${state.activeHandFilter === "pass" ? "is-active" : ""}" data-action="filter-pass" data-tip="Percentage of deals passed.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Pass</div><div class="hand-stat-value">${state.handStats.passRatePct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.passMadePct)}">${state.handStats.passMadePct}</span></span></div></div>
+                      <div class="hand-stat-card ${state.activeHandFilter === "whist" ? "is-active" : ""}" data-action="filter-whist" data-tip="Percentage of deals played as whist/half-whist.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Whist</div><div class="hand-stat-value">${state.handStats.whistRatePct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.whistMadePct)}">${state.handStats.whistMadePct}</span></span></div></div>
                       <div class="hand-stat-card ${state.activeHandFilter === "akq" ? "is-active" : ""}" data-action="filter-akq" data-tip="Percentage of hands with at least one suited AKQ combination (e.g., A♠ K♠ Q♠).&#10;In a uniformly random deal, the expected value is 9.54%."><div class="hand-stat-label">AKQ Suited</div><div class="hand-stat-value">${state.handStats.suitedAKQPct}<span class="hand-stat-delta ${scoreClass(formatSignedPpDelta(state.handStats.suitedAKQRate - 9.5385))}">${formatSignedPpDelta(state.handStats.suitedAKQRate - 9.5385)}</span></div></div>
                       <div class="hand-stat-card ${state.activeHandFilter === "akqj" ? "is-active" : ""}" data-action="filter-akqj" data-tip="Percentage of hands with at least one suited AKQJ combination (e.g., A♠ K♠ Q♠ J♠).&#10;In a uniformly random deal, the expected value is 2.33%."><div class="hand-stat-label">AKQJ Suited</div><div class="hand-stat-value">${state.handStats.suitedAKQJPct}<span class="hand-stat-delta ${scoreClass(formatSignedPpDelta(state.handStats.suitedAKQJRate - 2.3334))}">${formatSignedPpDelta(state.handStats.suitedAKQJRate - 2.3334)}</span></div></div>
                       <div class="hand-stat-card ${state.activeHandFilter === "aces3" ? "is-active" : ""}" data-action="filter-aces3" data-tip="Percentage of hands with three or more aces (e.g., A♠ A♦ A♣).&#10;In a uniformly random deal, the expected value is 7.93%."><div class="hand-stat-label">3+ Aces</div><div class="hand-stat-value">${state.handStats.threePlusAcesPct}<span class="hand-stat-delta ${scoreClass(formatSignedPpDelta(state.handStats.threePlusAcesRate - 7.9255))}">${formatSignedPpDelta(state.handStats.threePlusAcesRate - 7.9255)}</span></div></div>
@@ -1349,7 +1358,7 @@
           </div>
           ${state.activeHandFilter ? `
           <div class="section">
-            <h2>${state.activeHandFilter === "hands" ? "Deals" : (state.activeHandFilter === "akq" ? "AKQ Suited Deals" : (state.activeHandFilter === "akqj" ? "AKQJ Suited Deals" : (state.activeHandFilter === "aces3" ? "3+ Aces Deals" : (state.activeHandFilter === "miser" ? "Misère Deals" : (state.activeHandFilter === "declarer" ? "Declarer Deals" : (state.activeHandFilter === "pass" ? "Pass Deals" : (state.activeHandFilter === "passing" ? "Passing Deals" : "Whist Deals")))))))} • ${formatDealSplit(state.handMatches[state.activeHandFilter], state.activeHandFilter)}</h2>
+            <h2>${state.activeHandFilter === "hands" ? "Deals" : (state.activeHandFilter === "akq" ? "AKQ Suited Deals" : (state.activeHandFilter === "akqj" ? "AKQJ Suited Deals" : (state.activeHandFilter === "aces3" ? "3+ Aces Deals" : (state.activeHandFilter === "miser" ? "Misère Deals" : (state.activeHandFilter === "declarer" ? "Declarer Deals" : (state.activeHandFilter === "pass" ? "Pass Deals" : (state.activeHandFilter === "passing" ? "All Pass Deals" : "Whist Deals")))))))} • ${formatDealSplit(state.handMatches[state.activeHandFilter], state.activeHandFilter)}</h2>
             ${(state.handMatches[state.activeHandFilter]?.length || 0) === 0 ? `<div class="empty">No matching deals found.</div>` : `
               <div class="filtered-table-wrap">
                 <table class="filtered-deals-table">
