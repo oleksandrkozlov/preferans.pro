@@ -359,6 +359,31 @@
     .score-good { color: var(--green); font-weight: 700; }
     .score-bad { color: var(--red); font-weight: 700; }
     .score-mid { color: var(--orange); font-weight: 700; }
+    .scroll-top-button {
+      position: fixed;
+      left: 65.5px;
+      bottom: 16px;
+      transform: translateX(-50%);
+      z-index: 70;
+      width: 44px;
+      height: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--table-border);
+      border-radius: 999px;
+      background: rgba(37, 43, 60, 0.94);
+      color: var(--accent);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3);
+      cursor: pointer;
+      padding: 0;
+      font-size: 20px;
+      line-height: 1;
+      font-weight: 700;
+    }
+    .scroll-top-button[hidden] {
+      display: none;
+    }
     @media (max-width: 980px) {
       .app { grid-template-columns: 1fr; }
       .sidebar { border-right: none; border-bottom: 1px solid var(--line); max-height: 36vh; }
@@ -388,6 +413,7 @@
     </main>
   </div>
   <div id="stat-tooltip" class="stat-tooltip"></div>
+  <button id="scroll-top-button" class="scroll-top-button" type="button" aria-label="Scroll to top" title="Scroll to top" hidden>⬆</button>
 
   <script>
     const state = {
@@ -1750,6 +1776,19 @@
     async function boot() {
       try {
         const appTitle = document.getElementById("app-title");
+        const scrollTopButton = document.getElementById("scroll-top-button");
+        const updateScrollTopButton = () => {
+          const mainEl = document.querySelector(".main");
+          const scrollTop = Math.max(
+            mainEl ? mainEl.scrollTop : 0,
+            window.scrollY,
+            document.documentElement ? document.documentElement.scrollTop : 0,
+            document.body ? document.body.scrollTop : 0
+          );
+          if (scrollTopButton) {
+            scrollTopButton.hidden = scrollTop <= 4;
+          }
+        };
         if (appTitle) {
           appTitle.addEventListener("click", () => {
             state.selectedUserId = null;
@@ -1761,6 +1800,21 @@
             render();
           });
         }
+        if (scrollTopButton) {
+          scrollTopButton.addEventListener("click", () => {
+            const mainEl = document.querySelector(".main");
+            if (mainEl) {
+              mainEl.scrollTop = 0;
+            }
+            window.scrollTo(0, 0);
+            updateScrollTopButton();
+          });
+        }
+        const mainEl = document.querySelector(".main");
+        if (mainEl) {
+          mainEl.addEventListener("scroll", updateScrollTopButton);
+        }
+        window.addEventListener("scroll", updateScrollTopButton);
         loadViewState();
         const urlSelection = applySelectedUserIdFromUrl();
         await loadUsers();
@@ -1788,6 +1842,7 @@
         }
         saveViewState();
         render();
+        updateScrollTopButton();
         startAutoRefresh();
       } catch (err) {
         document.getElementById("content").innerHTML =
