@@ -276,7 +276,7 @@
     }
     .games-table-wrap {
       max-height: none;
-      overflow-y: auto;
+      overflow: auto;
       border: 1px solid var(--table-border);
       border-radius: 8px;
     }
@@ -286,7 +286,7 @@
     }
     .filtered-table-wrap {
       max-height: none;
-      overflow-y: auto;
+      overflow: auto;
       border: 1px solid var(--table-border);
       border-radius: 8px;
     }
@@ -295,10 +295,12 @@
       border-radius: 0;
     }
     .filtered-deals-table {
-      table-layout: fixed;
+      width: max-content;
+      min-width: 100%;
+      table-layout: auto;
     }
     .filtered-deals-table .cards {
-      white-space: normal;
+      white-space: nowrap;
     }
     .filtered-table-wrap thead th {
       position: sticky;
@@ -337,10 +339,18 @@
     }
     .deal { margin-bottom: 12px; border: 1px solid var(--table-border); border-radius: 10px; overflow: hidden; background: var(--table-bg); }
     .deal-head { background: var(--table-head-bg); padding: 8px 10px; font-weight: 700; }
-    .deals-table { table-layout: fixed; }
+    .deals-table {
+      width: max-content;
+      min-width: 100%;
+      table-layout: auto;
+    }
     .deals-table .col-decision { width: auto; }
     .deals-table th, .deals-table td { white-space: normal; overflow-wrap: anywhere; }
-    .deals-table .cards { white-space: normal; }
+    .deals-table .cards { white-space: nowrap; }
+    .filtered-deals-table .cards .cards-list,
+    .deals-table .cards .cards-list {
+      flex-wrap: nowrap;
+    }
     .deal-tricks {
       border-top: 1px solid var(--table-border);
       padding: 6px 8px 8px;
