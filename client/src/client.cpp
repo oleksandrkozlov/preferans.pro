@@ -1643,6 +1643,12 @@ auto handleDealCards(const Message& msg) -> void
     player.sortCards();
 }
 
+auto closeScoreSheetAndOverallScoreboard() -> void
+{
+    ctx().scoreSheet.isVisible = false;
+    ctx().overallScoreboard.isVisible = false;
+}
+
 auto handlePlayerTurn(const Message& msg) -> void
 {
     using enum GameStage;
@@ -1705,19 +1711,23 @@ auto handlePlayerTurn(const Message& msg) -> void
     if (ctx().stage == WITHOUT_TALON) {
         ctx().bidding.rank -= 7;
         ctx().bidding.isVisible = true;
+        closeScoreSheetAndOverallScoreboard();
         return;
     }
     if (ctx().stage == BIDDING) {
         ctx().bidding.isVisible = true;
+        closeScoreSheetAndOverallScoreboard();
         return;
     }
     if (ctx().stage == WHISTING) {
         ctx().whisting.canHalfWhist = playerTurn->can_half_whist();
         ctx().whisting.isVisible = true;
+        closeScoreSheetAndOverallScoreboard();
         return;
     }
     if (ctx().stage == HOW_TO_PLAY) {
         ctx().howToPlay.isVisible = true;
+        closeScoreSheetAndOverallScoreboard();
         return;
     }
 }
