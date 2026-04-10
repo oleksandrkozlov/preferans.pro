@@ -1692,6 +1692,7 @@ auto handlePlayerTurn(const Message& msg) -> void
     auto playerTurn = makeMethod<PlayerTurn>(msg);
     if (not playerTurn) { return; }
     ctx().turnPlayerId = playerTurn->player_id();
+    const auto oldStage = ctx().stage;
     ctx().stage = playerTurn->stage();
     const auto minBid = playerTurn->min_bid();
     const auto passRound = playerTurn->pass_round();
@@ -1713,6 +1714,14 @@ auto handlePlayerTurn(const Message& msg) -> void
     }
     ctx().bidding.passRound = passRound;
     const auto isMyTurn = pref::isMyTurn();
+    if (oldStage == TALON_PICKING and ctx().stage != TALON_PICKING) {
+        const auto [leftOpponentId, rightOpponentId] = getOpponentIds();
+        if (isDeclarer(ctx().player(leftOpponentId))) {
+            ctx().leftCardCount = 10;
+        } else if (isDeclarer(ctx().player(rightOpponentId))) {
+            ctx().rightCardCount = 10;
+        }
+    }
     // FIXME: On reconnection during talon picking, previously discarded cards are incorrectly restored to the hand
     if (ctx().stage == TALON_PICKING) {
         const auto talonCards = playerTurn->talon()
@@ -1727,6 +1736,14 @@ auto handlePlayerTurn(const Message& msg) -> void
             if (not allCardsAlreadyApplied and not rng::equal(ctx().pendingTalonReveal, talonCards)) {
                 ctx().pendingTalonReveal = std::move(talonCards);
                 ctx().pendingTalonRevealUntil = ctx().window.GetTime() + 2.0;
+            }
+            if (not isMyTurn and not allCardsAlreadyApplied) {
+                const auto [leftOpponentId, rightOpponentId] = getOpponentIds();
+                if (ctx().turnPlayerId == leftOpponentId) {
+                    ctx().leftCardCount += std::ssize(talonCards);
+                } else if (ctx().turnPlayerId == rightOpponentId) {
+                    ctx().rightCardCount += std::ssize(talonCards);
+                }
             }
         }
         applyPendingTalonReveal();
@@ -3432,6 +3449,7 @@ auto drawOfferButton() -> void
 [[nodiscard]] auto sideHandGapY(const int cardCount, const int tricksTaken) -> float
 {
     const auto defaultGapY = handCardGapY(static_cast<std::size_t>(cardCount));
+    if (cardCount > 10) { return defaultGapY * 0.8f; }
     if (cardCount < 10 or tricksTaken == 0) { return defaultGapY; }
     return defaultGapY * 0.9f;
 }
