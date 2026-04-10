@@ -2324,7 +2324,7 @@ auto drawSpeechBubbleText(r::Vector2 p3, const std::string& text, const DrawPosi
     const auto padding = textSize.y * 0.5f;
     const auto bubbleWidth = textSize.x + padding * 2.f;
     const auto bubbleHeight = textSize.y + padding * 2.f;
-    static constexpr auto shift = VirtualH / 28.8f;
+    static constexpr auto shift = VirtualH / 10.0f;
     p3 = isRight(drawPosition) ? r::Vector2{p3.x - shift, p3.y} : r::Vector2{p3.x + shift, p3.y};
     const auto pos = isRight(drawPosition) ? r::Vector2{p3.x - textSize.y - bubbleWidth, p3.y - bubbleHeight * 0.5f}
                                            : r::Vector2{p3.x + textSize.y, p3.y - bubbleHeight * 0.5f};
@@ -3331,7 +3331,7 @@ auto drawOpponentHand(const DrawPosition drawPosition) -> void
     const auto playerNameCenter = drawPlayerName(cardFirstCenterTopPos, player, Negative | Vertical);
     drawWhist(cardLastCenterBottomPos, player, Positive | Vertical) //
         or drawBid(cardLastCenterBottomPos, player, Positive | Vertical);
-    drawSpeechBubble({playerNameCenter.x, cardFirstLeftTopPos.y - VirtualH / 11.f}, playerId, drawPosition);
+    drawSpeechBubble({playerNameCenter.x, cardFirstLeftTopPos.y - VirtualH / 25.f}, playerId, drawPosition);
     // drawDebugVertLine(cardCenterX, "cardCenterX");
     // drawDebugDot(cardFirstCenterTopPos, "cardFirstCenterTopPos");
     // drawDebugDot(cardLastCenterBottomPos, "cardLastCenterBottomPos");
@@ -4213,12 +4213,19 @@ auto drawSpeechBubbleMenu() -> void
             withGuiState(STATE_DISABLED, not ctx().speechBubbleMenu.isSendButtonActive, [&] {
                 const auto sent = GuiButton(
                     {sendButton.x, sendButton.y, SpeechBubbleMenu::ListViewW, sendButtonOrInputH}, sendText.c_str());
-                if (sent and activeIndex >= 0 and activeIndex < std::ssize(phrases)) {
-                    const auto& phrase = phrases[static_cast<std::size_t>(activeIndex)];
-                    sendSpeechBubble(phrase);
-                    ctx().speechBubbleMenu.text.insert_or_assign(ctx().myPlayerId, std::move(phrase));
-                    ctx().speechBubbleMenu.isSendButtonActive = false;
-                    speechBubbleCooldown();
+                if (sent) {
+                    auto text = std::string{};
+                    if (activeIndex >= 0 and activeIndex < std::ssize(phrases)) {
+                        text = phrases[static_cast<std::size_t>(activeIndex)];
+                    } else {
+                        text = std::string{input.c_str()};
+                    }
+                    if (not std::empty(text)) {
+                        sendSpeechBubble(text);
+                        ctx().speechBubbleMenu.text.insert_or_assign(ctx().myPlayerId, std::move(text));
+                        ctx().speechBubbleMenu.isSendButtonActive = false;
+                        speechBubbleCooldown();
+                    }
                 }
             });
         });
