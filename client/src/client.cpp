@@ -450,6 +450,7 @@ struct SettingsMenu {
     r::Vector2 grabOffset{};
     bool moving{};
     r::Vector2 windowBoxPos{MenuX - windowBoxW, BorderMargin};
+    r::Rectangle windowBox{};
 };
 
 struct VirtualKeyboard {
@@ -482,6 +483,7 @@ struct SpeechBubbleMenu {
     r::Vector2 grabOffset{};
     bool moving{};
     r::Vector2 windowBoxPos{MenuX - windowBoxW, SettingsMenu::ButtomY + Margin};
+    r::Rectangle windowBox{};
 };
 
 struct OverallScoreboard {
@@ -493,6 +495,7 @@ struct OverallScoreboard {
     r::Vector2 windowBoxPos{};
     UserGames userGames;
     Table table;
+    r::Rectangle windowBox{};
 };
 
 struct LadderMenu {
@@ -502,6 +505,7 @@ struct LadderMenu {
     bool moving{};
     // TODO: make windowBoxPos.x relative
     r::Vector2 windowBoxPos{348.f, BorderMargin + 170.f};
+    r::Rectangle windowBox{};
 };
 
 struct MovingCard {
@@ -2760,6 +2764,71 @@ auto drawLoginScreen() -> void
     return widget.isVisible;
 }
 
+[[nodiscard]] constexpr auto makeMessageBoxRect(const r::Vector2 pos) noexcept -> r::Rectangle
+{
+    static constexpr auto boxWidth = VirtualW / 5.f;
+    static constexpr auto boxHeight = RAYGUI_TEXTINPUTBOX_HEIGHT;
+    static constexpr auto messageBoxWidth = boxWidth + RAYGUI_TEXTINPUTBOX_BUTTON_PADDING * 2.f;
+    static constexpr auto messageBoxHeight = boxHeight * 4.5f;
+    return {pos.x - messageBoxWidth * 0.5f, pos.y - messageBoxHeight * 0.5f, messageBoxWidth, messageBoxHeight};
+}
+
+[[nodiscard]] auto scoreSheetRect() noexcept -> r::Rectangle
+{
+    static const auto center = r::Vector2{VirtualW * 0.5f, VirtualH * 0.5f};
+    static const auto sheetS = center.y * 1.45f;
+    static const auto sheet = r::Vector2{center.x - sheetS * 0.5f, center.y - sheetS * 0.5f};
+    return {sheet.x, sheet.y, sheetS, sheetS};
+}
+
+[[nodiscard]] constexpr auto logoutMessageRect() noexcept -> r::Rectangle
+{
+    static constexpr auto boxWidth = VirtualW / 5.f;
+    static constexpr auto boxHeight = RAYGUI_TEXTINPUTBOX_HEIGHT;
+    static constexpr auto messageBoxWidth = boxWidth + RAYGUI_TEXTINPUTBOX_BUTTON_PADDING * 2.f;
+    static constexpr auto messageBoxHeight = boxHeight * 4.5f;
+    return {VirtualW - CardBorderMargin - CardWidth - messageBoxWidth - 20,
+            BorderMargin + 170,
+            messageBoxWidth,
+            messageBoxHeight};
+}
+
+[[nodiscard]] constexpr auto hasArea(const r::Rectangle& rect) noexcept -> bool
+{
+    return rect.width > 0.f and rect.height > 0.f;
+}
+
+[[nodiscard]] auto isMouseOverBlockingOverlay(const r::Vector2 mousePos = r::Mouse::GetPosition()) -> bool
+{
+    if (ctx().settingsMenu.isVisible and hasArea(ctx().settingsMenu.windowBox)
+        and mousePos.CheckCollision(ctx().settingsMenu.windowBox)) {
+        return true;
+    }
+    if (ctx().speechBubbleMenu.isVisible and hasArea(ctx().speechBubbleMenu.windowBox)
+        and mousePos.CheckCollision(ctx().speechBubbleMenu.windowBox)) {
+        return true;
+    }
+    if (ctx().overallScoreboard.isVisible and hasArea(ctx().overallScoreboard.windowBox)
+        and mousePos.CheckCollision(ctx().overallScoreboard.windowBox)) {
+        return true;
+    }
+    if (ctx().ladderMenu.isVisible and hasArea(ctx().ladderMenu.windowBox)
+        and mousePos.CheckCollision(ctx().ladderMenu.windowBox)) {
+        return true;
+    }
+    if (ctx().scoreSheet.isVisible and mousePos.CheckCollision(scoreSheetRect())) { return true; }
+    if (ctx().logoutMessage.isVisible and mousePos.CheckCollision(logoutMessageRect())) { return true; }
+    if (ctx().talonDiscardPopUp.isVisible
+        and mousePos.CheckCollision(makeMessageBoxRect({VirtualW * 0.5f, VirtualH * 0.45f}))) {
+        return true;
+    }
+    if (ctx().playerLeftPopUp.isVisible
+        and mousePos.CheckCollision(makeMessageBoxRect({VirtualW * 0.5f, VirtualH * 0.23f}))) {
+        return true;
+    }
+    return false;
+}
+
 [[maybe_unused]] auto drawMessageBox(
     const r::Vector2& pos, const std::string& title, const std::string& message, const std::string& buttons) -> int;
 
@@ -2767,15 +2836,7 @@ auto drawLogoutMessage() -> void
 {
     if (not isVisible(ctx().logoutMessage)) { return; }
     assert(ctx().isLoggedIn);
-    static constexpr auto boxWidth = VirtualW / 5.f;
-    static constexpr auto boxHeight = RAYGUI_TEXTINPUTBOX_HEIGHT;
-    static constexpr auto messageBoxWidth = boxWidth + RAYGUI_TEXTINPUTBOX_BUTTON_PADDING * 2.f;
-    static constexpr auto messageBoxHeight = boxHeight * 4.5f;
-    static const auto messageBox = r::Rectangle{
-        VirtualW - CardBorderMargin - CardWidth - messageBoxWidth - 20,
-        BorderMargin + 170,
-        messageBoxWidth,
-        messageBoxHeight};
+    static const auto messageBox = logoutMessageRect();
     const auto clicked = withGuiFont(ctx().fontS, [&] {
         const auto logoutText = ctx().localizeText(GameText::LogOut);
         const auto areYouSureText = ctx().localizeText(GameText::LogOutOfTheAccount);
@@ -2854,12 +2915,7 @@ auto drawTalonDiscardPopUp() -> void
 [[maybe_unused]] auto drawMessageBox(
     const r::Vector2& pos, const std::string& title, const std::string& message, const std::string& buttons) -> int
 {
-    static constexpr auto boxWidth = VirtualW / 5.f;
-    static constexpr auto boxHeight = RAYGUI_TEXTINPUTBOX_HEIGHT;
-    static constexpr auto messageBoxWidth = boxWidth + RAYGUI_TEXTINPUTBOX_BUTTON_PADDING * 2.f;
-    static constexpr auto messageBoxHeight = boxHeight * 4.5f;
-    const auto rect = r::Rectangle{
-        pos.x - messageBoxWidth * 0.5f, pos.y - messageBoxHeight * 0.5f, messageBoxWidth, messageBoxHeight};
+    const auto rect = makeMessageBoxRect(pos);
     return withGuiFont(
         ctx().fontS, [&] { return GuiMessageBox(rect, title.c_str(), message.c_str(), buttons.c_str()); });
 }
@@ -3695,6 +3751,7 @@ auto sendBid(const std::string& bid, const bool finalBid, const std::size_t rank
 auto drawBiddingMenu() -> void
 {
     if (not ctx().bidding.isVisible) { return; }
+    const auto isBlockedByOverlay = isMouseOverBlockingOverlay();
     const auto finalBid = (std::size(ctx().discardedTalon) == 2) or (ctx().stage == WITHOUT_TALON);
     auto enabled = BidTable | rv::join | rv::filter([&](const std::string_view bid) {
                        return not std::empty(bid)
@@ -3718,7 +3775,9 @@ auto drawBiddingMenu() -> void
                 BidOriginY + static_cast<float>(r) * (BidCellH + BidGap)};
             const auto cell = r::Rectangle{pos, {BidCellW, BidCellH}};
             const auto clicked = std::invoke([&] {
-                if ((state == STATE_DISABLED) or not r::Mouse::GetPosition().CheckCollision(cell)) { return false; }
+                if (isBlockedByOverlay or (state == STATE_DISABLED) or not r::Mouse::GetPosition().CheckCollision(cell)) {
+                    return false;
+                }
                 state = r::Mouse::IsButtonDown(MOUSE_LEFT_BUTTON) ? STATE_PRESSED : STATE_FOCUSED;
                 return r::Mouse::IsButtonReleased(MOUSE_LEFT_BUTTON);
             });
@@ -3761,6 +3820,7 @@ auto drawMenu(
     std::invocable<GameText> auto&& filterButton) -> void
 {
     if (not isVisible) { return; }
+    const auto isBlockedByOverlay = isMouseOverBlockingOverlay();
     static constexpr auto cellW = VirtualW / 6.f;
     static constexpr auto cellH = cellW * 0.5f;
     static constexpr auto gap = cellH / 10.f;
@@ -3774,7 +3834,7 @@ auto drawMenu(
         const auto pos = r::Vector2{originX + static_cast<float>(i) * (cellW + gap), originY};
         const auto rect = r::Rectangle{pos, {cellW, cellH}};
         const auto clicked = std::invoke([&] {
-            if (not r::Mouse::GetPosition().CheckCollision(rect)) { return false; }
+            if (isBlockedByOverlay or not r::Mouse::GetPosition().CheckCollision(rect)) { return false; }
             state = r::Mouse::IsButtonDown(MOUSE_LEFT_BUTTON) ? STATE_PRESSED : STATE_FOCUSED;
             return r::Mouse::IsButtonReleased(MOUSE_LEFT_BUTTON);
         });
@@ -3975,6 +4035,7 @@ auto handleTalonCardClick(std::list<const Card*>& hand) -> void
 {
     if (not r::Mouse::IsButtonPressed(MOUSE_LEFT_BUTTON)) { return; }
     const auto mousePos = r::Mouse::GetPosition();
+    if (isMouseOverBlockingOverlay(mousePos)) { return; }
     const auto hit = [&](const Card* c) {
         return r::Rectangle{ctx().cardPositions[c->name], c->texture.GetSize()}.CheckCollision(mousePos);
     };
@@ -4448,12 +4509,11 @@ auto drawSpeechBubbleMenu() -> void
         const auto phrasesWindowBoxH
             = (sendButton.y + sendButtonOrInputH + SpeechBubbleMenu::Margin) - ctx().speechBubbleMenu.windowBoxPos.y;
         const auto phrasesText = ctx().localizeText(GameText::Phrases);
-        ctx().speechBubbleMenu.isVisible = not GuiWindowBox(
-            {ctx().speechBubbleMenu.windowBoxPos.x,
-             ctx().speechBubbleMenu.windowBoxPos.y,
-             SpeechBubbleMenu::windowBoxW,
-             phrasesWindowBoxH},
-            phrasesText.c_str());
+        ctx().speechBubbleMenu.windowBox = r::Rectangle{ctx().speechBubbleMenu.windowBoxPos.x,
+                                                        ctx().speechBubbleMenu.windowBoxPos.y,
+                                                        SpeechBubbleMenu::windowBoxW,
+                                                        phrasesWindowBoxH};
+        ctx().speechBubbleMenu.isVisible = not GuiWindowBox(ctx().speechBubbleMenu.windowBox, phrasesText.c_str());
         GuiTextBox(
             r::Rectangle{inputPos.x, inputPos.y, SpeechBubbleMenu::ListViewW, sendButtonOrInputH},
             std::data(input),
@@ -4530,6 +4590,8 @@ auto drawSettingsMenu() -> void
     const auto fpsCheckbox = r::Vector2{otherGroupBox.x + margin, otherGroupBox.y + margin};
     const auto soundEffectsCheckbox = r::Vector2{otherGroupBox.x + margin, fpsCheckbox.y + margin * 1.5f};
     static const auto windowBoxH = (fpsCheckbox.y + otherGroupBoxH) - ctx().settingsMenu.windowBoxPos.y;
+    ctx().settingsMenu.windowBox = r::Rectangle{
+        ctx().settingsMenu.windowBoxPos.x, ctx().settingsMenu.windowBoxPos.y, SettingsMenu::windowBoxW, windowBoxH};
     withGuiFont(ctx().fontS, [&] {
         const auto settingsText = ctx().localizeText(GameText::Settings);
         const auto languageText = ctx().localizeText(GameText::Language);
@@ -4537,10 +4599,7 @@ auto drawSettingsMenu() -> void
         const auto otherText = ctx().localizeText(GameText::Other);
         const auto fpsText = ctx().localizeText(GameText::ShowFps);
         ctx().settingsMenu.isVisible = not GuiWindowBox(
-            {ctx().settingsMenu.windowBoxPos.x,
-             ctx().settingsMenu.windowBoxPos.y,
-             SettingsMenu::windowBoxW,
-             windowBoxH},
+            ctx().settingsMenu.windowBox,
             settingsText.c_str());
         if (ctx().settingsMenu.isVisible) { ctx().logoutMessage.isVisible = false; }
         GuiGroupBox({langGroupBox.x, langGroupBox.y, groupBoxW, langGroupBoxH}, languageText.c_str());
@@ -5291,6 +5350,7 @@ auto drawOverallScoreboard() -> void
         ctx().overallScoreboard.windowBoxPos = (r::Vector2{VirtualW, VirtualH} - windowBoxSize) * 0.5f;
     }
     const auto windowBox = r::Rectangle{ctx().overallScoreboard.windowBoxPos, windowBoxSize};
+    ctx().overallScoreboard.windowBox = windowBox;
     if (0.f == ctx().overallScoreboard.windowBoxW) { ctx().overallScoreboard.windowBoxW = windowBox.width; }
     const auto scrollPanel = r::Rectangle{{windowBox.x + cellSize.y, windowBox.y + cellSize.y * 4.f}, panel};
     const auto content = r::Rectangle{
@@ -5371,6 +5431,7 @@ auto drawLadder() -> void
     static constexpr auto rowH = RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT;
     static constexpr auto pad = rowH * 0.6f;
     static constexpr auto gap = rowH * 0.8f;
+    static constexpr auto rightPad = 26.f;
     withGuiFont(ctx().fontS, [&] {
         const auto title = ctx().localizeText(GameText::Ladder);
         auto rows = std::vector<std::tuple<std::string, std::string, int>>{};
@@ -5389,13 +5450,13 @@ auto drawLadder() -> void
         }
         const auto titleW = measureGuiText(title).x + RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT * 2.f;
         static constexpr auto textSlack = 24.f;
-        static constexpr auto rightPad = 26.f;
         const auto contentW = (leftColW + textSlack) + gap + (mmrColW + textSlack * 0.5f);
         ctx().ladderMenu.windowBoxW = std::max(titleW + pad * 2.f, contentW + pad + rightPad);
         const auto rowCount = static_cast<float>(std::size(rows));
         const auto windowH = RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT + pad * 2.f + rowH * rowCount;
         const auto windowBox = r::Rectangle{
             ctx().ladderMenu.windowBoxPos.x, ctx().ladderMenu.windowBoxPos.y, ctx().ladderMenu.windowBoxW, windowH};
+        ctx().ladderMenu.windowBox = windowBox;
         const auto lineTop = windowBox.y + RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT + pad;
         const auto leftColX = windowBox.x + pad;
         const auto mmrColRightX = windowBox.x + windowBox.width - rightPad;
@@ -5776,6 +5837,7 @@ auto drawVersion() -> void
 auto handleMousePress() -> void
 {
     if (not r::Mouse::IsButtonPressed(MOUSE_LEFT_BUTTON) or ctx().isGameFreezed) { return; }
+    if (isMouseOverBlockingOverlay()) { return; }
     if (ctx().stage == GameStage::PLAYING) {
         if (isOfferPending()) { return; }
         if ((not isMyTurn() or isSomeonePlayingOnMyBehalf()) and not isMyTurnOnBehalfOfSomeone()) { return; }
