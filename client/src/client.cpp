@@ -3423,6 +3423,10 @@ auto drawOfferButton() -> void
             = currentOfferText(ctx().offerButton.beenClicked, requester, useToggleGroup ? std::optional{extraTricks} : std::nullopt);
         const auto maxOfferText
             = currentOfferText(ctx().offerButton.beenClicked, requester, useToggleGroup ? std::optional{maxTricks} : std::nullopt);
+        if (r::Keyboard::IsKeyPressed(KEY_ESCAPE)) {
+            ctx().offerButton.isVisible = false;
+            return;
+        }
         const auto offerW = (pad * 2.0f) + ctx().fontM.MeasureText(maxOfferText.c_str(), ctx().fontSizeM(), FontSpacing).x;
         const auto buttonX = (VirtualW * 0.5f) - (offerW * 0.5f);
         if (useToggleGroup) {
