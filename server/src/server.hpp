@@ -76,6 +76,16 @@ struct PlayedCard {
     CardName name;
 };
 
+struct DealTrickCardEntry {
+    Player::Id playerId;
+    CardName card;
+};
+
+struct DealTrickEntry {
+    std::vector<DealTrickCardEntry> plays;
+    Player::Id winnerPlayerId;
+};
+
 enum class WhistingChoice {
     Pass,
     Whist,
@@ -186,6 +196,7 @@ struct Context {
         talon.clear();
         trick.clear();
         lastTrick.clear();
+        trickHistory.clear();
         pendingDealHands.clear();
         pendingDealTalon.clear();
         trump.clear();
@@ -206,6 +217,7 @@ struct Context {
     Talon talon;
     std::vector<CardName> lastTrick;
     std::vector<PlayedCard> trick;
+    std::vector<DealTrickEntry> trickHistory;
     std::vector<std::pair<Player::Id, Hand>> pendingDealHands;
     std::vector<CardName> pendingDealTalon;
     std::string trump;

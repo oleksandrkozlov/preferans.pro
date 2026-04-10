@@ -109,7 +109,24 @@ auto setNextDealTurn() -> void
 
 [[nodiscard]] auto decideTrickWinner() -> Player::Id
 {
+    auto finishedTrick = DealTrickEntry{};
+    finishedTrick.plays.reserve(std::size(ctx().trick) + (std::empty(ctx().talon.current) ? 0 : 1));
+    for (const auto& playedCard : ctx().trick) {
+        finishedTrick.plays.push_back(DealTrickCardEntry{
+            .playerId = playedCard.playerId,
+            .card = playedCard.name,
+        });
+    }
+    if (not std::empty(ctx().talon.current)) {
+        finishedTrick.plays.push_back(DealTrickCardEntry{
+            .playerId = {},
+            .card = ctx().talon.current,
+        });
+    }
     const auto winnerId = decideTrickWinner(ctx().trick, ctx().trump);
+    finishedTrick.winnerPlayerId = winnerId;
+    ctx().trickHistory.push_back(std::move(finishedTrick));
+    assert(std::size(ctx().trickHistory) <= TotalTricksPerDeal);
     const auto winnerName = ctx().playerName(winnerId);
     const auto tricksTaken = ++ctx().player(winnerId).tricksTaken;
     PREF_DI(winnerName, winnerId, tricksTaken);
@@ -606,7 +623,15 @@ auto dealFinished(const bool isDownThreeTricks) -> task<bool>
                 totalMmr));
     }
     addOrUpdateGameDealResult(
-        ctx().gameData, ctx().gameId, ctx().dealId, declarerId, contract, decisions, tricks, playerDealScores);
+        ctx().gameData,
+        ctx().gameId,
+        ctx().dealId,
+        declarerId,
+        contract,
+        decisions,
+        tricks,
+        playerDealScores,
+        ctx().trickHistory);
     PREF_DI(finalResult);
     storeGameData(ctx().gameDataPath, ctx().gameData);
     co_await sendUserGames();

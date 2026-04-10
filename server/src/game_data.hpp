@@ -155,7 +155,7 @@ inline auto addOrUpdateGameDeal(
     for (const auto& card : discardedCards) { deal->add_discarded_cards(card); }
 }
 
-template<typename PlayerChoicesRange, typename PlayerTricksRange, typename PlayerScoresRange>
+template<typename PlayerChoicesRange, typename PlayerTricksRange, typename PlayerScoresRange, typename TrickHistoryRange>
 inline auto addOrUpdateGameDealResult(
     GameData& gameData,
     const std::int32_t gameId,
@@ -164,7 +164,8 @@ inline auto addOrUpdateGameDealResult(
     const std::string_view contract,
     const PlayerChoicesRange& playerChoices,
     const PlayerTricksRange& playerTricks,
-    const PlayerScoresRange& playerScores) -> void
+    const PlayerScoresRange& playerScores,
+    const TrickHistoryRange& trickHistory) -> void
 {
     auto& games = *gameData.mutable_games();
     const auto gameIt = rng::find(games, gameId, &Game::id);
@@ -179,6 +180,7 @@ inline auto addOrUpdateGameDealResult(
     deal->clear_decisions();
     deal->clear_tricks();
     deal->clear_scores();
+    deal->clear_trick_history();
     for (const auto& [playerId, choice] : playerChoices) { (*deal->mutable_decisions())[playerId] = choice; }
     for (const auto& [playerId, tricks] : playerTricks) { (*deal->mutable_tricks())[playerId] = tricks; }
     for (const auto& [playerId, score] : playerScores) {
@@ -187,6 +189,15 @@ inline auto addOrUpdateGameDealResult(
         dst.set_dump(score.dump());
         dst.set_whists(score.whists());
         dst.set_mmr(score.mmr());
+    }
+    for (const auto& trick : trickHistory) {
+        auto* dstTrick = deal->add_trick_history();
+        dstTrick->set_winner_player_id(trick.winnerPlayerId);
+        for (const auto& play : trick.plays) {
+            auto* dstPlay = dstTrick->add_plays();
+            dstPlay->set_player_id(play.playerId);
+            dstPlay->set_card(play.card);
+        }
     }
 }
 
