@@ -5323,16 +5323,19 @@ auto initAudioEngine() -> void
                 }
 
                 function closePeer(remoteId) {
-                    const pc = peers.get(remoteId);
-                    if (pc) {
-                        pc.getSenders().forEach(sender => {
-                            try {
-                                pc.removeTrack(sender);
-                            } catch (_) {}
-                        });
-                        pc.close();
-                    }
+                    const entry = peers.get(remoteId);
                     peers.delete(remoteId);
+                    if (entry) {
+                        Promise.resolve(entry).then(pc => {
+                            if (!pc) { return; }
+                            pc.getSenders().forEach(sender => {
+                                try {
+                                    pc.removeTrack(sender);
+                                } catch (_) {}
+                            });
+                            pc.close();
+                        }).catch(() => {});
+                    }
                     const audio = audios.get(remoteId);
                     if (audio) {
                         audio.srcObject = null;
@@ -5344,45 +5347,51 @@ auto initAudioEngine() -> void
                 async function ensurePeer(remoteId) {
                     if (!remoteId || remoteId === selfId) { return null; }
                     if (peers.has(remoteId)) { return peers.get(remoteId); }
-                    const pc = new RTCPeerConnection({
-                        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-                    });
-                    peers.set(remoteId, pc);
-                    const stream = await getLocalStream();
-                    stream.getTracks().forEach(track => pc.addTrack(track, stream));
-                    pc.onicecandidate = ev => {
-                        if (ev.candidate) {
-                            send(remoteId, 'candidate', JSON.stringify(ev.candidate));
-                        }
-                    };
-                    pc.ontrack = ev => {
-                        const remoteStream = ev.streams[0];
-                        let audio = audios.get(remoteId);
-                        if (!audio) {
-                            audio = new Audio();
-                            audio.autoplay = true;
-                            audio.controls = false;
-                            audio.style.display = 'none';
-                            audios.set(remoteId, audio);
-                            document.body.appendChild(audio);
-                        }
-                        audio.srcObject = remoteStream;
-                        audio.play().catch(() => {});
-                    };
-                    pc.onconnectionstatechange = () => {
-                        if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) {
-                            closePeer(remoteId);
-                            if (desiredPeers.has(remoteId)) {
-                                setTimeout(() => { if (desiredPeers.has(remoteId)) { void ensurePeer(remoteId); } }, 1000);
+                    // Store a Promise so concurrent callers (e.g. handleSignal arriving
+                    // while getLocalStream is still pending) await the fully-initialized
+                    // PC — with tracks added — before proceeding to createAnswer().
+                    const promise = (async () => {
+                        const pc = new RTCPeerConnection({
+                            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+                        });
+                        pc.onicecandidate = ev => {
+                            if (ev.candidate) {
+                                send(remoteId, 'candidate', JSON.stringify(ev.candidate));
                             }
+                        };
+                        pc.ontrack = ev => {
+                            const remoteStream = ev.streams[0];
+                            let audio = audios.get(remoteId);
+                            if (!audio) {
+                                audio = new Audio();
+                                audio.autoplay = true;
+                                audio.controls = false;
+                                audio.style.display = 'none';
+                                audios.set(remoteId, audio);
+                                document.body.appendChild(audio);
+                            }
+                            audio.srcObject = remoteStream;
+                            audio.play().catch(() => {});
+                        };
+                        pc.onconnectionstatechange = () => {
+                            if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) {
+                                closePeer(remoteId);
+                                if (desiredPeers.has(remoteId)) {
+                                    setTimeout(() => { if (desiredPeers.has(remoteId)) { void ensurePeer(remoteId); } }, 1000);
+                                }
+                            }
+                        };
+                        const stream = await getLocalStream();
+                        stream.getTracks().forEach(track => pc.addTrack(track, stream));
+                        if (shouldInitiate(remoteId)) {
+                            const offer = await pc.createOffer();
+                            await pc.setLocalDescription(offer);
+                            send(remoteId, 'offer', JSON.stringify(offer));
                         }
-                    };
-                    if (shouldInitiate(remoteId)) {
-                        const offer = await pc.createOffer();
-                        await pc.setLocalDescription(offer);
-                        send(remoteId, 'offer', JSON.stringify(offer));
-                    }
-                    return pc;
+                        return pc;
+                    })();
+                    peers.set(remoteId, promise);
+                    return promise;
                 }
 
                 async function handleSignal(from, kind, data) {
