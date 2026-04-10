@@ -219,6 +219,11 @@ template<typename... Args>
     return resources("fonts", name);
 }
 
+[[nodiscard]] auto shaders(const std::string_view name) -> std::string
+{
+    return resources("shaders", name);
+}
+
 struct Card {
     Card(CardNameView n)
         : name{n}
@@ -247,6 +252,15 @@ struct SmallCard {
     CardNameView name;
     r::Image image;
     r::Texture texture{};
+};
+
+struct CardShineShader {
+    ::Shader shader{};
+    int timeLoc = -1;
+    int cardSizeLoc = -1;
+    bool isLoaded = false;
+    const Card* hoveredCard = nullptr;
+    double hoverStartTime = 0.0;
 };
 
 [[nodiscard]] auto suitValue(const std::string_view suit) -> int
@@ -676,6 +690,8 @@ auto loadCards() -> void
     auto&& _ = getCard(PREF_SEVEN_OF_SPADES);
 }
 
+auto loadCardShineShader() -> void;
+
 [[nodiscard]] auto getSmallCard(const CardNameView name) -> const SmallCard&
 {
     static auto allCards = std::invoke([&] {
@@ -843,6 +859,7 @@ struct Context {
     r::Window window{windowWidth, windowHeight, "Preferans"};
     r::RenderTexture target{static_cast<int>(VirtualW), static_cast<int>(VirtualH)};
     r::AudioDevice audio;
+    CardShineShader cardShineShader;
     Sound sound;
     Mic microphone;
     Voice voice;
@@ -1013,6 +1030,19 @@ struct Context {
 {
     static auto ctx = Context{};
     return ctx;
+}
+
+auto loadCardShineShader() -> void
+{
+    auto& cardShineShader = ctx().cardShineShader;
+    cardShineShader.shader = LoadShader(nullptr, shaders("card_shine.fs").c_str());
+    cardShineShader.isLoaded = IsShaderValid(cardShineShader.shader);
+    if (not cardShineShader.isLoaded) {
+        spdlog::error("failed to load card shine shader");
+        return;
+    }
+    cardShineShader.timeLoc = GetShaderLocation(cardShineShader.shader, "uTime");
+    cardShineShader.cardSizeLoc = GetShaderLocation(cardShineShader.shader, "uCardSize");
 }
 
 auto initAudioEngine() -> void;
@@ -3647,34 +3677,26 @@ auto drawConnectedPlayers() -> void
     return canPlay ? r::Color::White() : lightGray;
 }
 
-auto drawCardShineEffect(const bool isHovered, const r::Vector2& cardPosition) -> void
+auto drawCardShineEffect(const Card& card, const bool isHovered, const r::Vector2& cardPosition, const r::Color tint) -> void
 {
-    if (not isHovered) { return; }
-    static constexpr auto speed = 90.f;
-    static constexpr auto stripeWidth = CardWidth / 5.f;
-    static constexpr auto maxIntensity = 0.5f; // 0..1 alpha
-    static constexpr auto fadeMargin = stripeWidth * 0.5f;
-    static constexpr auto fadeEdge = CardWidth * 0.5f - fadeMargin;
-    static constexpr auto marginY = CardHeight / 20.f;
-    const auto time = static_cast<float>(ctx().window.GetTime());
-    const auto x = std::fmod(time * speed, CardWidth - stripeWidth);
-    const auto rect
-        = r::Rectangle{cardPosition.x + x, cardPosition.y + marginY * 0.5f, stripeWidth, CardHeight - marginY};
-    const auto cardCenterX = cardPosition.x + CardWidth * 0.5f;
-    const auto stripeCenterX = cardPosition.x + x + stripeWidth * 0.5f;
-    const auto distanceToCenter = std::abs(stripeCenterX - cardCenterX);
-    const auto overallIntensity = std::invoke([&] { // clang-format off
-        return std::clamp((distanceToCenter >= fadeEdge)
-            ? 0.f : std::cos((distanceToCenter / fadeEdge) * std::numbers::pi_v<float> * 0.5f), 0.f, 1.f);
-    }); // clang-format on
-    const auto whiteColor = r::Color::White();
-    const auto topLeft = whiteColor.Fade(0.f * overallIntensity);
-    const auto bottomLeft = whiteColor.Fade(0.f * overallIntensity);
-    const auto bottomRight = whiteColor.Fade(maxIntensity * overallIntensity);
-    const auto topRight = whiteColor.Fade(maxIntensity * overallIntensity);
-    BeginBlendMode(BLEND_ADDITIVE);
-    rect.DrawGradient(topLeft, bottomLeft, bottomRight, topRight);
-    EndBlendMode();
+    auto& cardShineShader = ctx().cardShineShader;
+    if (not isHovered or not cardShineShader.isLoaded) {
+        if (cardShineShader.hoveredCard == &card) { cardShineShader.hoveredCard = nullptr; }
+        card.texture.Draw(cardPosition, tint);
+        return;
+    }
+    const auto now = ctx().window.GetTime();
+    if (cardShineShader.hoveredCard != &card) {
+        cardShineShader.hoveredCard = &card;
+        cardShineShader.hoverStartTime = now;
+    }
+    const auto elapsed = static_cast<float>(std::fmod(now - cardShineShader.hoverStartTime, 1000.0));
+    const auto cardSize = std::array{CardWidth, CardHeight};
+    SetShaderValue(cardShineShader.shader, cardShineShader.timeLoc, &elapsed, SHADER_UNIFORM_FLOAT);
+    SetShaderValue(cardShineShader.shader, cardShineShader.cardSizeLoc, cardSize.data(), SHADER_UNIFORM_VEC2);
+    BeginShaderMode(cardShineShader.shader);
+    card.texture.Draw(cardPosition, tint);
+    EndShaderMode();
 }
 
 auto drawHandTurnAura(const r::Rectangle& cardsRect) -> void
@@ -3752,8 +3774,7 @@ auto drawCards(const r::Vector2 pos, Player& player, const Shift shift) -> void
         const auto canPlay = not ctx().cardsOnTable.contains(player.id) and isCardPlayable;
         const auto canPlayWithTalon
             = isTalonSelectionLocked ? (isSelectedForTalon ? true : false) : canPlay;
-        card->texture.Draw(cardPosition, tintForCard(canPlayWithTalon));
-        drawCardShineEffect(isHovered, cardPosition);
+        drawCardShineEffect(*card, isHovered, cardPosition, tintForCard(canPlayWithTalon));
     }
 }
 
@@ -6633,6 +6654,7 @@ int main(const int argc, const char* const argv[])
     pref::loadFonts();
     pref::loadCards();
     pref::loadSmallCards();
+    pref::loadCardShineShader();
     const auto resize
         = []([[maybe_unused]] const int eventType, [[maybe_unused]] const auto* e, [[maybe_unused]] void* ud) {
               pref::updateWindowSize();

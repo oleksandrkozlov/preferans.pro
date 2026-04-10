@@ -156,7 +156,9 @@ target_link_options(
     -lwebsocket.js
 )
 
+file(GLOB_RECURSE PREF_CLIENT_RESOURCE_FILES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/resources/*)
+
 add_custom_command(
     OUTPUT ${CMAKE_SOURCE_DIR}/src/client.cpp COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_SOURCE_DIR}/src/client.cpp
-    DEPENDS ${PREF_INDEX_HTML}.in
+    DEPENDS ${PREF_INDEX_HTML}.in ${PREF_CLIENT_RESOURCE_FILES}
 )
