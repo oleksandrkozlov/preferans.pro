@@ -348,6 +348,15 @@
       align-items: center;
       min-height: 26px;
     }
+    .talon-card {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2px;
+      border: 1px dashed rgba(139, 233, 253, 0.65);
+      border-radius: 6px;
+      background: rgba(139, 233, 253, 0.08);
+    }
     .card-img {
       width: 22px;
       height: 32px;
@@ -525,6 +534,31 @@
 
     function cardsHtml(cards) {
       return `<span class="cards-list">${sortCardNames(cards).map(cardImageHtml).join("")}</span>`;
+    }
+
+    function dealCardsHtml(cards, talonCards = []) {
+      const taggedCards = [
+        ...(Array.isArray(cards) ? cards : []).map((name, idx) => ({ name, isTalon: false, idx })),
+        ...(Array.isArray(talonCards) ? talonCards : []).map((name, idx) => ({ name, isTalon: true, idx })),
+      ];
+      const suitOrder = { "♠": 1, "♦": 2, "♣": 3, "♥": 4 };
+      const rankOrder = { "7": 1, "8": 2, "9": 3, "10": 4, J: 5, Q: 6, K: 7, A: 8 };
+      taggedCards.sort((a, b) => {
+        const lhs = normalizeCard(a.name);
+        const rhs = normalizeCard(b.name);
+        const s = (suitOrder[lhs.suit] ?? 99) - (suitOrder[rhs.suit] ?? 99);
+        if (s) return s;
+        const r = (rankOrder[lhs.rank] ?? 99) - (rankOrder[rhs.rank] ?? 99);
+        if (r) return r;
+        if (a.isTalon !== b.isTalon) return a.isTalon ? 1 : -1;
+        return a.idx - b.idx;
+      });
+      return `<span class="cards-list">${taggedCards.map(card => {
+        const html = cardImageHtml(card.name);
+        return card.isTalon
+          ? `<span class="talon-card" title="Talon card">${html}</span>`
+          : html;
+      }).join("")}</span>`;
     }
 
     function cardAssetName(name) {
@@ -1056,6 +1090,8 @@
 
     function dealRows(deal) {
       const pids = Object.keys(deal.hands || {}).sort();
+      const showSeparateTalonRow = allPlayersPassed(deal);
+      const talonCards = Array.isArray(deal?.talon) ? deal.talon : [];
       return pids.map(pid => {
         const rawDecision = deal.decisions?.[pid] ?? (pid === deal.declarer_id ? deal.contract : "");
         const decision = normalizeContract(rawDecision);
@@ -1064,6 +1100,10 @@
         const dpw = `${Number(score.dump || 0)}/${Number(score.pool || 0)}/${Number(score.whists || 0)}`;
         const mmr = Number(score.mmr || 0);
         const mmrText = `${mmr > 0 ? "+" : ""}${mmr}`;
+        const cards = deal.hands[pid] || [];
+        const rowTalonCards = !showSeparateTalonRow && pid === deal.declarer_id
+          ? talonCards
+          : [];
         return `
           <tr>
             <td>${esc(nameByPlayerId(pid))}</td>
@@ -1071,7 +1111,7 @@
             <td>${esc(tricks)}</td>
             <td>${esc(dpw)}</td>
             <td class="${scoreClass(mmrText)}">${esc(mmrText)}</td>
-            <td class="cards">${cardsHtml(deal.hands[pid] || [])}</td>
+            <td class="cards">${dealCardsHtml(cards, rowTalonCards)}</td>
           </tr>
         `;
       }).join("");
@@ -1667,6 +1707,7 @@
                 </thead>
                 <tbody>
                   ${dealRows(deal)}
+                  ${allPlayersPassed(deal) ? `
                   <tr>
                     <td>Talon</td>
                     <td></td>
@@ -1675,6 +1716,7 @@
                     <td></td>
                     <td class="cards">${cardsHtml(deal.talon || [])}</td>
                   </tr>
+                  ` : ""}
                 </tbody>
               </table>
             </div>
