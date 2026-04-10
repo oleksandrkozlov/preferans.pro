@@ -519,6 +519,10 @@ struct MovingCard {
 
 struct LogoutMessage {
     bool isVisible{};
+    static constexpr auto windowBoxW = VirtualW / 5.f + RAYGUI_TEXTINPUTBOX_BUTTON_PADDING * 2.f;
+    r::Vector2 grabOffset{};
+    bool moving{};
+    r::Vector2 windowBoxPos{VirtualW - CardBorderMargin - CardWidth - windowBoxW - 20, BorderMargin + 170};
 };
 
 struct PlayerLeftPopUp {
@@ -638,6 +642,11 @@ struct ReadyCheckPopUp {
 struct TalonDiscardPopUp {
     bool isVisible{};
     bool isDownThreeTricks{};
+    static constexpr auto windowBoxW = VirtualW / 5.f + RAYGUI_TEXTINPUTBOX_BUTTON_PADDING * 2.f;
+    static constexpr auto windowBoxH = RAYGUI_TEXTINPUTBOX_HEIGHT * 4.5f;
+    r::Vector2 grabOffset{};
+    bool moving{};
+    r::Vector2 windowBoxPos{(VirtualW - windowBoxW) * 0.5f, VirtualH * 0.45f - windowBoxH * 0.5f};
 };
 
 struct OfferButton {
@@ -2773,6 +2782,15 @@ auto drawLoginScreen() -> void
     return {pos.x - messageBoxWidth * 0.5f, pos.y - messageBoxHeight * 0.5f, messageBoxWidth, messageBoxHeight};
 }
 
+[[nodiscard]] constexpr auto makeMessageBoxRectFromTopLeft(const r::Vector2 pos) noexcept -> r::Rectangle
+{
+    static constexpr auto boxWidth = VirtualW / 5.f;
+    static constexpr auto boxHeight = RAYGUI_TEXTINPUTBOX_HEIGHT;
+    static constexpr auto messageBoxWidth = boxWidth + RAYGUI_TEXTINPUTBOX_BUTTON_PADDING * 2.f;
+    static constexpr auto messageBoxHeight = boxHeight * 4.5f;
+    return {pos.x, pos.y, messageBoxWidth, messageBoxHeight};
+}
+
 [[nodiscard]] auto scoreSheetRect() noexcept -> r::Rectangle
 {
     static const auto center = r::Vector2{VirtualW * 0.5f, VirtualH * 0.5f};
@@ -2781,16 +2799,14 @@ auto drawLoginScreen() -> void
     return {sheet.x, sheet.y, sheetS, sheetS};
 }
 
-[[nodiscard]] constexpr auto logoutMessageRect() noexcept -> r::Rectangle
+[[nodiscard]] auto logoutMessageRect() noexcept -> r::Rectangle
 {
-    static constexpr auto boxWidth = VirtualW / 5.f;
-    static constexpr auto boxHeight = RAYGUI_TEXTINPUTBOX_HEIGHT;
-    static constexpr auto messageBoxWidth = boxWidth + RAYGUI_TEXTINPUTBOX_BUTTON_PADDING * 2.f;
-    static constexpr auto messageBoxHeight = boxHeight * 4.5f;
-    return {VirtualW - CardBorderMargin - CardWidth - messageBoxWidth - 20,
-            BorderMargin + 170,
-            messageBoxWidth,
-            messageBoxHeight};
+    return makeMessageBoxRectFromTopLeft(ctx().logoutMessage.windowBoxPos);
+}
+
+[[nodiscard]] auto talonDiscardPopUpRect() noexcept -> r::Rectangle
+{
+    return makeMessageBoxRectFromTopLeft(ctx().talonDiscardPopUp.windowBoxPos);
 }
 
 [[nodiscard]] constexpr auto hasArea(const r::Rectangle& rect) noexcept -> bool
@@ -2818,8 +2834,7 @@ auto drawLoginScreen() -> void
     }
     if (ctx().scoreSheet.isVisible and mousePos.CheckCollision(scoreSheetRect())) { return true; }
     if (ctx().logoutMessage.isVisible and mousePos.CheckCollision(logoutMessageRect())) { return true; }
-    if (ctx().talonDiscardPopUp.isVisible
-        and mousePos.CheckCollision(makeMessageBoxRect({VirtualW * 0.5f, VirtualH * 0.45f}))) {
+    if (ctx().talonDiscardPopUp.isVisible and mousePos.CheckCollision(talonDiscardPopUpRect())) {
         return true;
     }
     if (ctx().playerLeftPopUp.isVisible
@@ -2836,7 +2851,7 @@ auto drawLogoutMessage() -> void
 {
     if (not isVisible(ctx().logoutMessage)) { return; }
     assert(ctx().isLoggedIn);
-    static const auto messageBox = logoutMessageRect();
+    const auto messageBox = logoutMessageRect();
     const auto clicked = withGuiFont(ctx().fontS, [&] {
         const auto logoutText = ctx().localizeText(GameText::LogOut);
         const auto areYouSureText = ctx().localizeText(GameText::LogOutOfTheAccount);
@@ -2890,7 +2905,9 @@ auto drawTalonDiscardPopUp() -> void
         "{};{}", //
         ctx().localizeText(GameText::Yes),
         ctx().localizeText(GameText::No));
-    const auto clicked = drawMessageBox({VirtualW * 0.5f, VirtualH * 0.45f}, title, message, buttons);
+    const auto clicked = withGuiFont(ctx().fontS, [&] {
+        return GuiMessageBox(talonDiscardPopUpRect(), title.c_str(), message.c_str(), buttons.c_str());
+    });
     if (clicked == PREF_NO_CLICK) { return; }
     if (clicked == PREF_OK_CLICK) {
         if (ctx().talonDiscardPopUp.isDownThreeTricks) {
@@ -4328,32 +4345,30 @@ auto drawLogoutButton() -> void
 
 auto drawStatButton() -> void
 {
-    withGuiState(STATE_PRESSED, ctx().ladderMenu.isVisible, [&] {
-        drawToolbarButton(
-            2,
-            StatIcon,
-            [&] {
+    drawToolbarButton(
+        2,
+        StatIcon,
+        [&] {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdollar-in-identifier-extension"
-                EM_ASM(
-                    {
-                        const selectedUserId = encodeURIComponent(UTF8ToString($0));
-                        const shouldSelectLatestGame = Boolean($1);
-                        const url = "https://"
-                            + UTF8ToString($2)
-                            + "/prefbuff/?selectedUserId="
-                            + selectedUserId
-                            + (shouldSelectLatestGame ? "&selectLatestGame=1" : "");
-                        window.open(url, "_blank");
-                    },
-                    ctx().myPlayerId.c_str(),
-                    ctx().isGameStarted ? 1 : 0,
-                    PREF_HOST);
+            EM_ASM(
+                {
+                    const selectedUserId = encodeURIComponent(UTF8ToString($0));
+                    const shouldSelectLatestGame = Boolean($1);
+                    const url = "https://"
+                        + UTF8ToString($2)
+                        + "/prefbuff/?selectedUserId="
+                        + selectedUserId
+                        + (shouldSelectLatestGame ? "&selectLatestGame=1" : "");
+                    window.open(url, "_blank");
+                },
+                ctx().myPlayerId.c_str(),
+                ctx().isGameStarted ? 1 : 0,
+                PREF_HOST);
 #pragma GCC diagnostic pop
-            },
-            false,
-            true);
-    });
+        },
+        false,
+        true);
 }
 
 auto toggleVoice() -> void
@@ -5893,7 +5908,10 @@ auto updateDrawFrame([[maybe_unused]] void* ud) -> void
     if (GuiIsLocked()
         and not ctx().settingsMenu.moving
         and not ctx().speechBubbleMenu.moving
-        and not ctx().overallScoreboard.moving) {
+        and not ctx().overallScoreboard.moving
+        and not ctx().ladderMenu.moving
+        and not ctx().logoutMessage.moving
+        and not ctx().talonDiscardPopUp.moving) {
         GuiUnlock();
     }
     handleMousePress();
@@ -5901,6 +5919,8 @@ auto updateDrawFrame([[maybe_unused]] void* ud) -> void
     updateMenuPosition(ctx().speechBubbleMenu);
     updateMenuPosition(ctx().overallScoreboard);
     updateMenuPosition(ctx().ladderMenu);
+    updateMenuPosition(ctx().logoutMessage);
+    updateMenuPosition(ctx().talonDiscardPopUp);
 
     ctx().target.BeginMode();
     ctx().window.ClearBackground(getGuiColor(BACKGROUND_COLOR));
@@ -5941,9 +5961,9 @@ auto updateDrawFrame([[maybe_unused]] void* ud) -> void
     drawPingAndFps();
     drawVersion();
     drawAgreements(reservedTop);
-    if (ctx().isGameStarted and ctx().isLoggedIn and ctx().areAllPlayersJoined()) { drawSpeechBubbleMenu(); }
     if (ctx().isLoggedIn) { drawOverallScoreboard(); }
     if (ctx().isLoggedIn) { drawLadder(); }
+    if (ctx().isGameStarted and ctx().isLoggedIn and ctx().areAllPlayersJoined()) { drawSpeechBubbleMenu(); }
     drawSettingsMenu();
     drawLogoutMessage();
     drawPlayerLeftPopUp();
