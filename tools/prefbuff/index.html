@@ -353,8 +353,23 @@
       align-items: center;
       justify-content: center;
       padding: 2px;
-      border: 1px dashed rgba(139, 233, 253, 0.65);
+      border: 1px solid rgba(139, 233, 253, 0.65);
       border-radius: 6px;
+      background: rgba(139, 233, 253, 0.08);
+    }
+    .discarded-card {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2px;
+      border-radius: 6px;
+    }
+    .discarded-card .card-img,
+    .discarded-card .card-text-fallback {
+      opacity: 0.5;
+    }
+    .talon-card.discarded-card {
+      border-color: rgba(139, 233, 253, 0.65);
       background: rgba(139, 233, 253, 0.08);
     }
     .card-img {
@@ -536,13 +551,38 @@
       return `<span class="cards-list">${sortCardNames(cards).map(cardImageHtml).join("")}</span>`;
     }
 
-    function dealCardsHtml(cards, talonCards = []) {
+    function buildCardCountMap(cards) {
+      const counts = new Map();
+      for (const card of (Array.isArray(cards) ? cards : [])) {
+        counts.set(card, (counts.get(card) || 0) + 1);
+      }
+      return counts;
+    }
+
+    function takeFromCountMap(counts, card) {
+      const remaining = counts.get(card) || 0;
+      if (remaining <= 0) return false;
+      if (remaining === 1) {
+        counts.delete(card);
+      } else {
+        counts.set(card, remaining - 1);
+      }
+      return true;
+    }
+
+    function dealCardsHtml(cards, talonCards = [], discardedCards = []) {
+      const discardedCounts = buildCardCountMap(discardedCards);
       const taggedCards = [
-        ...(Array.isArray(cards) ? cards : []).map((name, idx) => ({ name, isTalon: false, idx })),
-        ...(Array.isArray(talonCards) ? talonCards : []).map((name, idx) => ({ name, isTalon: true, idx })),
+        ...(Array.isArray(cards) ? cards : []).map((name, idx) => ({ name, isTalon: false, isDiscarded: false, idx })),
+        ...(Array.isArray(talonCards) ? talonCards : []).map((name, idx) => ({ name, isTalon: true, isDiscarded: false, idx })),
       ];
       const suitOrder = { "♠": 1, "♦": 2, "♣": 3, "♥": 4 };
       const rankOrder = { "7": 1, "8": 2, "9": 3, "10": 4, J: 5, Q: 6, K: 7, A: 8 };
+      for (const card of taggedCards) {
+        if (takeFromCountMap(discardedCounts, card.name)) {
+          card.isDiscarded = true;
+        }
+      }
       taggedCards.sort((a, b) => {
         const lhs = normalizeCard(a.name);
         const rhs = normalizeCard(b.name);
@@ -555,9 +595,15 @@
       });
       return `<span class="cards-list">${taggedCards.map(card => {
         const html = cardImageHtml(card.name);
-        return card.isTalon
-          ? `<span class="talon-card" title="Talon card">${html}</span>`
-          : html;
+        if (!card.isTalon && !card.isDiscarded) return html;
+        const classes = [
+          card.isTalon ? "talon-card" : "",
+          card.isDiscarded ? "discarded-card" : "",
+        ].filter(Boolean).join(" ");
+        const title = card.isTalon && card.isDiscarded
+          ? "Talon card, then discarded"
+          : (card.isTalon ? "Talon card" : "Discarded card");
+        return `<span class="${classes}" title="${title}">${html}</span>`;
       }).join("")}</span>`;
     }
 
@@ -789,7 +835,9 @@
             dpw: `${Number(deal?.scores?.[playerId]?.dump || 0)}/${Number(deal?.scores?.[playerId]?.pool || 0)}/${Number(deal?.scores?.[playerId]?.whists || 0)}`,
             mmr: Number(deal?.scores?.[playerId]?.mmr || 0),
             cards,
-            talon: Array.isArray(deal?.talon) ? deal.talon : []
+            talon: Array.isArray(deal?.talon) ? deal.talon : [],
+            discardedCards: Array.isArray(deal?.discarded_cards) ? deal.discarded_cards : [],
+            decisionText: String(rawDecision ?? "").trim()
           });
         }
       }
@@ -834,7 +882,8 @@
             dpw: `${Number(deal?.scores?.[playerId]?.dump || 0)}/${Number(deal?.scores?.[playerId]?.pool || 0)}/${Number(deal?.scores?.[playerId]?.whists || 0)}`,
             mmr: Number(deal?.scores?.[playerId]?.mmr || 0),
             cards,
-            talon: Array.isArray(deal?.talon) ? deal.talon : []
+            talon: Array.isArray(deal?.talon) ? deal.talon : [],
+            discardedCards: Array.isArray(deal?.discarded_cards) ? deal.discarded_cards : []
           });
         }
       }
@@ -1092,6 +1141,7 @@
       const pids = Object.keys(deal.hands || {}).sort();
       const showSeparateTalonRow = allPlayersPassed(deal);
       const talonCards = Array.isArray(deal?.talon) ? deal.talon : [];
+      const discardedCards = Array.isArray(deal?.discarded_cards) ? deal.discarded_cards : [];
       return pids.map(pid => {
         const rawDecision = deal.decisions?.[pid] ?? (pid === deal.declarer_id ? deal.contract : "");
         const decision = normalizeContract(rawDecision);
@@ -1104,6 +1154,9 @@
         const rowTalonCards = !showSeparateTalonRow && pid === deal.declarer_id
           ? talonCards
           : [];
+        const rowDiscardedCards = !showSeparateTalonRow && pid === deal.declarer_id
+          ? discardedCards
+          : [];
         return `
           <tr>
             <td>${esc(nameByPlayerId(pid))}</td>
@@ -1111,10 +1164,16 @@
             <td>${esc(tricks)}</td>
             <td>${esc(dpw)}</td>
             <td class="${scoreClass(mmrText)}">${esc(mmrText)}</td>
-            <td class="cards">${dealCardsHtml(cards, rowTalonCards)}</td>
+            <td class="cards">${dealCardsHtml(cards, rowTalonCards, rowDiscardedCards)}</td>
           </tr>
         `;
       }).join("");
+    }
+
+    function shouldShowSeparateTalonForMatch(match) {
+      const isDeclarer = String(match?.declarerId || "") === String(state.selectedUserId || "");
+      if (!isDeclarer) return true;
+      return isPassDecision(match?.decisionText || match?.decision || "");
     }
 
     function buildScoreRows(games) {
@@ -1624,7 +1683,7 @@
                     <col style="width:30%">
                   </colgroup>
                   <thead>
-                    <tr><th>GAME</th><th>DEAL</th><th>CONTRACT</th><th>DECISION</th><th>TRICKS</th><th>D/P/W</th><th>MMR</th><th>TALON</th><th>HANDS</th></tr>
+                    <tr><th>GAME</th><th>DEAL</th><th>CONTRACT</th><th>DECISION</th><th>TRICKS</th><th>D/P/W</th><th>MMR</th><th>TALON</th><th>CARDS</th></tr>
                   </thead>
                   <tbody>
                     ${(state.handMatches[state.activeHandFilter] || []).map(m => `
@@ -1637,7 +1696,9 @@
                         <td>${esc(m.dpw)}</td>
                         <td class="${scoreClass(String(m.mmr))}">${m.mmr > 0 ? "+" : ""}${m.mmr}</td>
                         <td class="cards">${cardsHtml(m.talon || [])}</td>
-                        <td class="cards">${cardsHtml(m.cards || [])}</td>
+                        <td class="cards">${shouldShowSeparateTalonForMatch(m)
+                          ? cardsHtml(m.cards || [])
+                          : dealCardsHtml(m.cards || [], m.talon || [], m.discardedCards || [])}</td>
                       </tr>
                     `).join("")}
                   </tbody>
@@ -1707,7 +1768,6 @@
                 </thead>
                 <tbody>
                   ${dealRows(deal)}
-                  ${allPlayersPassed(deal) ? `
                   <tr>
                     <td>Talon</td>
                     <td></td>
@@ -1716,7 +1776,6 @@
                     <td></td>
                     <td class="cards">${cardsHtml(deal.talon || [])}</td>
                   </tr>
-                  ` : ""}
                 </tbody>
               </table>
             </div>

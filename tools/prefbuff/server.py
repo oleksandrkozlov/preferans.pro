@@ -135,6 +135,7 @@ class DataStore:
                     {
                         "id": deal.id,
                         "talon": sorted(list(deal.talon)),
+                        "discarded_cards": sorted(list(deal.discarded_cards)),
                         "declarer_id": deal.declarer_id,
                         "declarer_name": user_names_by_id.get(deal.declarer_id, deal.declarer_id),
                         "contract": deal.contract,
