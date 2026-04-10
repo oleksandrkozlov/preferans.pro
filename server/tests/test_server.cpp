@@ -7,6 +7,7 @@
 
 #include <catch2/catch_all.hpp>
 
+#include <array>
 #include <cstdint>
 #include <iterator>
 #include <map>
@@ -37,6 +38,36 @@ namespace pref {
 // clang-format off
 TEST_CASE("server")
 {
+    SECTION("threePlayerTablePermutation cycles through every seating")
+    {
+        const auto actual = std::array{
+            threePlayerTablePermutation(0),
+            threePlayerTablePermutation(1),
+            threePlayerTablePermutation(2),
+            threePlayerTablePermutation(3),
+            threePlayerTablePermutation(4),
+            threePlayerTablePermutation(5),
+        };
+        const auto expected = std::array<SeatingPermutation, 6>{{
+            {{0, 1, 2}},
+            {{1, 0, 2}},
+            {{2, 0, 1}},
+            {{0, 2, 1}},
+            {{1, 2, 0}},
+            {{2, 1, 0}},
+        }};
+        REQUIRE(actual == expected);
+        REQUIRE(threePlayerTablePermutation(6) == expected.front());
+    }
+
+    SECTION("gameId drives seating cycle across restarts")
+    {
+        REQUIRE(threePlayerTablePermutation(1) == threePlayerTablePermutation(static_cast<std::size_t>(1)));
+        REQUIRE(threePlayerTablePermutation(2) == threePlayerTablePermutation(static_cast<std::size_t>(2)));
+        REQUIRE(threePlayerTablePermutation(0) == threePlayerTablePermutation(static_cast<std::size_t>(6)));
+        REQUIRE(threePlayerTablePermutation(1) == threePlayerTablePermutation(static_cast<std::size_t>(7)));
+    }
+
     SECTION("beats")
     {
         REQUIRE_FALSE(beats({.candidate = PREF_SEVEN PREF_OF_ PREF_HEARTS, .best = PREF_EIGHT PREF_OF_ PREF_HEARTS, .leadSuit = PREF_HEARTS, .trump = PREF_SPADES}));

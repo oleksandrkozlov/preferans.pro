@@ -712,6 +712,7 @@ struct Context {
     bool isLoggedIn{};
     bool isLoginInProgress{};
     mutable std::map<PlayerId, Player> players;
+    std::vector<PlayerId> tableOrder;
     std::unordered_map<PlayerId, int> ladderMmr;
     EMSCRIPTEN_WEBSOCKET_T ws{};
     int leftCardCount = 10;
@@ -1037,8 +1038,16 @@ auto removeFromLocalStorageAuthToken() -> void
 [[nodiscard]] auto getOpponentIds() -> std::pair<PlayerId, PlayerId>
 {
     assert(ctx().areAllPlayersJoined());
-    auto order = std::vector<PlayerId>{};
-    for (const auto& id : ctx().players | rv::keys) { order.push_back(id); }
+    const auto& order = std::invoke([&] -> const std::vector<PlayerId>& {
+        if (std::size(ctx().tableOrder) == NumberOfPlayers and rng::contains(ctx().tableOrder, ctx().myPlayerId)) {
+            return ctx().tableOrder;
+        }
+        static auto fallbackOrder = std::vector<PlayerId>{};
+        fallbackOrder.clear();
+        fallbackOrder.reserve(NumberOfPlayers);
+        for (const auto& playerId : ctx().players | rv::keys) { fallbackOrder.push_back(playerId); }
+        return fallbackOrder;
+    });
     const auto it = rng::find(order, ctx().myPlayerId);
     assert(it != order.end());
     const auto selfIndex = std::distance(order.begin(), it);
@@ -1393,6 +1402,7 @@ auto repeatPingPong() -> void
 auto finishLogin(auto& response) -> void
 {
     ctx().players.clear();
+    ctx().tableOrder.clear();
     for (const auto& p : response.players()) {
         auto playerId = std::string{p.player_id()};
         auto player = Player{playerId, std::string{p.player_name()}};
@@ -1568,7 +1578,18 @@ auto handlePlayerLeft(const Message& msg) -> void
         ctx().playerLeftPopUp.visibleUntil = ctx().window.GetTime() + 3.0; // show for 3s
     }
     ctx().players.erase(playerId);
+    std::erase(ctx().tableOrder, playerId);
     syncAudioPeers();
+}
+
+auto handleTableOrder(const Message& msg) -> void
+{
+    const auto tableOrder = makeMethod<TableOrder>(msg);
+    if (not tableOrder) { return; }
+    ctx().tableOrder.clear();
+    ctx().tableOrder.reserve(static_cast<std::size_t>(tableOrder->player_id_size()));
+    for (const auto& playerId : tableOrder->player_id()) { ctx().tableOrder.push_back(playerId); }
+    PREF_I("tableOrder: {}", ctx().tableOrder);
 }
 
 [[nodiscard]] auto isGame(const std::string_view b) -> bool
@@ -2091,6 +2112,7 @@ auto updateWindowSize() -> void
     PREF_X(PlayerTurn) \
     PREF_X(ReadyCheck) \
     PREF_X(SpeechBubble) \
+    PREF_X(TableOrder) \
     PREF_X(TrickFinished) \
     PREF_X(UserGames) \
     PREF_X(Whisting)

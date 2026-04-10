@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <exception>
 #include <filesystem>
+#include <array>
 #include <map>
 #include <set>
 #include <string>
@@ -201,7 +202,7 @@ struct Context {
     net::any_io_executor ex;
     GameStage stage = GameStage::UNKNOWN;
     mutable Players players;
-    Players::const_iterator whoseTurnIt;
+    Player::Id whoseTurnPlayerId;
     Talon talon;
     std::vector<CardName> lastTrick;
     std::vector<PlayedCard> trick;
@@ -210,6 +211,7 @@ struct Context {
     std::string trump;
     PassGame passGame;
     Player::Id forehandId;
+    std::vector<Player::Id> tableOrder;
     ScoreSheet scoreSheet;
     fs::path gameDataPath;
     GameData gameData;
@@ -230,6 +232,20 @@ struct Context {
 inline constexpr auto ToPlayerId = &Context::Players::value_type::first;
 inline constexpr auto ToPlayer = &Context::Players::value_type::second;
 inline constexpr auto TotalTricksPerDeal = 10;
+using SeatingPermutation = std::array<std::size_t, NumberOfPlayers>;
+inline constexpr auto ThreePlayerTablePermutations = std::array<SeatingPermutation, 6>{{
+    {{0, 1, 2}},
+    {{1, 0, 2}},
+    {{2, 0, 1}},
+    {{0, 2, 1}},
+    {{1, 2, 0}},
+    {{2, 1, 0}},
+}};
+
+[[nodiscard]] constexpr auto threePlayerTablePermutation(const std::size_t gameIndex) noexcept -> SeatingPermutation
+{
+    return ThreePlayerTablePermutations[gameIndex % std::size(ThreePlayerTablePermutations)];
+}
 
 struct Beat {
     std::string_view candidate;

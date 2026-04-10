@@ -125,6 +125,18 @@ inline auto sendForehand() -> task<>
     return sendToAll(makeForehand(ctx().forehandId));
 }
 
+inline auto sendTableOrder() -> task<>
+{
+    if (std::size(ctx().tableOrder) != NumberOfPlayers) { co_return; }
+    co_await sendToAll(makeTableOrder(ctx().tableOrder));
+}
+
+inline auto sendTableOrderToOne(const ChannelPtr& ch) -> task<>
+{
+    if (std::size(ctx().tableOrder) != NumberOfPlayers) { co_return; }
+    co_await sendToOne(ch, makeTableOrder(ctx().tableOrder));
+}
+
 inline auto sendDealCardsExcept(const Player::IdView playerId, const Hand& hand) -> task<>
 {
     return sendToAllExcept(makeDealCards(playerId, hand | rng::to_vector), playerId);

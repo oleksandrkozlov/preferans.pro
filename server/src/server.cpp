@@ -33,9 +33,38 @@
 namespace pref {
 namespace {
 
-auto setWhoseTurn(const Context::Players::const_iterator it) -> void
+auto setWhoseTurn(const Player::IdView playerId) -> void
 {
-    ctx().whoseTurnIt = it;
+    assert(ctx().players.contains(playerId) and "turn player exists");
+    ctx().whoseTurnPlayerId = std::string{playerId};
+}
+
+[[nodiscard]] auto sortedPartyIds() -> std::vector<Player::Id>
+{
+    auto result = ctx().players | rv::keys | rng::to_vector;
+    rng::sort(result);
+    return result;
+}
+
+[[nodiscard]] auto nextPlayerInTableOrder(const Player::IdView playerId) -> Player::IdView
+{
+    assert(std::size(ctx().tableOrder) == NumberOfPlayers and "table order exists");
+    const auto it = rng::find(ctx().tableOrder, playerId);
+    assert(it != std::end(ctx().tableOrder) and "player exists in table order");
+    const auto nextIt = std::next(it);
+    return nextIt != std::end(ctx().tableOrder) ? *nextIt : ctx().tableOrder.front();
+}
+
+auto setTableOrderForNewGame() -> void
+{
+    assert(std::size(ctx().players) == NumberOfPlayers and "all players joined");
+    const auto partyIds = sortedPartyIds();
+    assert(ctx().gameId > 0 and "gameId is incremented before seating is decided");
+    const auto permutation = threePlayerTablePermutation(static_cast<std::size_t>(ctx().gameId));
+    ctx().tableOrder.clear();
+    ctx().tableOrder.reserve(NumberOfPlayers);
+    for (const auto index : permutation) { ctx().tableOrder.push_back(partyIds[index]); }
+    PREF_I("tableOrder: {}", ctx().tableOrder);
 }
 
 auto setForehandId() -> void
@@ -46,26 +75,20 @@ auto setForehandId() -> void
 
 auto resetWhoseTurn() -> void
 {
-    assert((std::size(ctx().players) == NumberOfPlayers) and "all players joined");
-    setWhoseTurn(std::cbegin(ctx().players));
+    assert(std::size(ctx().tableOrder) == NumberOfPlayers and "table order exists");
+    setWhoseTurn(ctx().tableOrder.front());
 }
 
 auto advanceWhoseTurn() -> void
 {
-    assert((std::size(ctx().players) == NumberOfPlayers) and "all players joined");
-    if (const auto nextTurnIt = std::next(ctx().whoseTurnIt); nextTurnIt != std::cend(ctx().players)) {
-        setWhoseTurn(nextTurnIt);
-    } else {
-        resetWhoseTurn();
-    }
+    setWhoseTurn(nextPlayerInTableOrder(ctx().whoseTurnId()));
     PREF_I("playerId: {}", ctx().whoseTurnId());
 }
 
 auto forehandsTurn() -> void
 {
     PREF_I();
-    assert(ctx().players.contains(ctx().forehandId) and "forehand player exists");
-    setWhoseTurn(ctx().players.find(ctx().forehandId));
+    setWhoseTurn(ctx().forehandId);
 }
 
 auto advanceWhoseTurn(const GameStage stage) -> void
@@ -79,11 +102,9 @@ auto advanceWhoseTurn(const GameStage stage) -> void
 
 auto setNextDealTurn() -> void
 {
-    assert((std::size(ctx().players) == NumberOfPlayers) and "all players joined");
-    assert(ctx().players.contains(ctx().forehandId) and "forehand player exists");
-    const auto nextIt = std::next(ctx().players.find(ctx().forehandId));
-    setWhoseTurn(nextIt != std::cend(ctx().players) ? nextIt : std::cbegin(ctx().players));
-    setForehandId();
+    ctx().forehandId = std::string{nextPlayerInTableOrder(ctx().forehandId)};
+    setWhoseTurn(ctx().forehandId);
+    PREF_I("playerId: {}", ctx().forehandId);
 }
 
 [[nodiscard]] auto decideTrickWinner() -> Player::Id
@@ -309,6 +330,7 @@ auto reconnectPlayer(const ChannelPtr& ch, const Player::IdView playerId, Player
     // TODO: send Offer after reconnection
     co_await sendUserGames(player);
     co_await sendLadderToOne(ch);
+    co_await sendTableOrderToOne(ch);
     co_await sendDealCardsFor(ch, playerId, player.hand | rng::to<Hand>);
     co_await sendForehand();
     co_await sendPlayerTurn(makePlayerTurnData());
@@ -391,16 +413,16 @@ auto dealCards() -> task<>
     ctx().talon.cards = chunks | rv::drop(NumberOfPlayers) | rv::join | rng::to_vector;
     assert((std::size(ctx().talon.cards) == 2) and "talon is two cards");
     assert((std::size(ctx().players) == NumberOfPlayers) and (std::size(hands) == NumberOfPlayers));
-    for (auto&& [playerId, hand] : rv::zip(ctx().players | rv::keys, hands)) {
+    for (auto&& [playerId, hand] : rv::zip(ctx().tableOrder, hands)) {
         ctx().player(playerId).hand = hand | rng::to<Hand>;
     }
-    ctx().pendingDealHands = ctx().players
-        | rv::transform([](const auto& player) { return std::pair{player.first, player.second.hand}; })
+    ctx().pendingDealHands = ctx().tableOrder
+        | rv::transform([](const auto& playerId) { return std::pair{playerId, ctx().player(playerId).hand}; })
         | rng::to_vector;
     ctx().pendingDealTalon = ctx().talon.cards;
     PREF_I("talon: {}", ctx().talon.cards);
-    const auto channels = players()
-        | rv::transform([](const Player& player) { return std::pair{player.conn.ch, player.id}; })
+    const auto channels = ctx().tableOrder
+        | rv::transform([](const auto& playerId) { return std::pair{ctx().player(playerId).conn.ch, playerId}; })
         | rng::to_vector;
     assert((std::size(channels) == NumberOfPlayers) and (std::size(hands) == NumberOfPlayers));
     for (auto&& [ch_id, hand] : rv::zip(channels, hands)) {
@@ -413,7 +435,9 @@ auto clearGameState() -> void
 {
     ctx().clear();
     ctx().stage = GameStage::UNKNOWN;
+    ctx().whoseTurnPlayerId.clear();
     ctx().forehandId = {};
+    ctx().tableOrder.clear();
     ctx().scoreSheet = {};
     ctx().gameStarted = {};
     ctx().gameDuration = {};
@@ -622,9 +646,11 @@ auto startGame() -> task<>
         addOrUpdateUserGame(ctx().gameData, id, makeUserGame(ctx().gameId, GameType::RANKED, ctx().gameStarted));
     }
     storeGameData(ctx().gameDataPath, ctx().gameData);
-    co_await dealCards();
+    setTableOrderForNewGame();
     resetWhoseTurn();
     setForehandId();
+    co_await sendTableOrder();
+    co_await dealCards();
     co_await sendForehand();
     ctx().stage = GameStage::BIDDING;
     co_await sendPlayerTurn(decidePlayerTurn());
@@ -904,7 +930,7 @@ auto handleWhisting(const Message& msg) -> task<>
     }
     if (bothWhist) { co_return co_await startPlayingFromForehand(); }
     if (oneWhist) {
-        if (choice != PREF_WHIST) { setWhoseTurn(playerItByWhistingChoice(ctx().players, Whist)); }
+        if (choice != PREF_WHIST) { setWhoseTurn(playerByWhistingChoice(ctx().players, Whist).id); }
         ctx().stage = HOW_TO_PLAY;
         co_return co_await sendPlayerTurn(decidePlayerTurn());
     }
@@ -1001,7 +1027,7 @@ auto handlePlayCard(const Message& msg) -> task<>
             co_return co_await finishDeal();
         }
         if (not ctx().passGame.now) {
-            setWhoseTurn(ctx().players.find(winnerId));
+            setWhoseTurn(winnerId);
         } else {
             ++ctx().talon.open;
             if (ctx().talon.open == 1) {
@@ -1010,7 +1036,7 @@ auto handlePlayCard(const Message& msg) -> task<>
             } else if (ctx().talon.open == 2) {
                 forehandsTurn();
             } else {
-                setWhoseTurn(ctx().players.find(winnerId));
+                setWhoseTurn(winnerId);
             }
         }
     }
@@ -1143,7 +1169,7 @@ Player::Player(Id aId, Name aName, PlayerSession::Id aSessionId, const ChannelPt
 
 auto Context::whoseTurnId() const -> Player::IdView
 {
-    return whoseTurnIt->first;
+    return whoseTurnPlayerId;
 }
 
 auto Context::player(const Player::IdView playerId) const -> Player&

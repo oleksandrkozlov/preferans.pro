@@ -111,6 +111,14 @@ auto moveVectorToRepeated(std::vector<T>& input, MutRepeatedField& output) -> vo
     return makeMessage(result).SerializeAsString();
 }
 
+[[nodiscard]] inline auto makeTableOrder(const std::span<const PlayerId> playerIds) -> std::string
+{
+    PREF_DI(playerIds);
+    auto result = TableOrder{};
+    for (const auto& playerId : playerIds) { result.add_player_id(playerId); }
+    return makeMessage(result).SerializeAsString();
+}
+
 [[nodiscard]] inline auto makeDealCards(const PlayerIdView playerId, const CardsNamesView hand) -> std::string
 {
     PREF_DI(playerId, hand);
