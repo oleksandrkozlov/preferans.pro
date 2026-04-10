@@ -57,6 +57,7 @@ struct Player {
     int tricksTaken{};
     ReadyCheckState readyCheckState = ReadyCheckState::NOT_REQUESTED;
     Offer offer = Offer::NO_OFFER;
+    int offerTricks{};
 
     auto clear() -> void
     {
@@ -68,6 +69,7 @@ struct Player {
         tricksTaken = 0;
         readyCheckState = ReadyCheckState::NOT_REQUESTED;
         offer = Offer::NO_OFFER;
+        offerTricks = 0;
     }
 };
 
@@ -202,6 +204,7 @@ struct Context {
         trump.clear();
         passGame.clear();
         isDeclarerFirstMiserTurn = false;
+        isTrustCheckTieBreakPending = false;
         for (auto&& [_, p] : players) { p.clear(); }
     }
 
@@ -228,6 +231,7 @@ struct Context {
     fs::path gameDataPath;
     GameData gameData;
     bool isDeclarerFirstMiserTurn{};
+    bool isTrustCheckTieBreakPending{};
 
     std::int32_t gameId{};
     std::int32_t dealId{};

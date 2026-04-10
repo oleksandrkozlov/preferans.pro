@@ -33,6 +33,9 @@
 namespace pref {
 namespace {
 
+[[nodiscard]] auto getTwoPassers() -> std::array<std::reference_wrapper<Player>, 2>;
+[[nodiscard]] auto decidePlayerTurn() -> PlayerTurnData;
+
 auto setWhoseTurn(const Player::IdView playerId) -> void
 {
     assert(ctx().players.contains(playerId) and "turn player exists");
@@ -218,6 +221,24 @@ auto setNextDealTurn() -> void
 [[nodiscard]] auto findPasserIds() -> std::vector<Player::Id>
 {
     return players() | rv::filter(equalTo(PREF_PASS), &Player::bid) | rv::transform(&Player::id) | rng::to_vector;
+}
+
+[[nodiscard]] constexpr auto isMiserOrTenGame(const Player& declarer) noexcept -> bool
+{
+    const auto contractLevel = makeContractLevel(declarer.bid);
+    return contractLevel == ContractLevel::Miser or contractLevel == ContractLevel::Ten;
+}
+
+auto restartTrustCheckDecision(const Player::IdView secondDefenderId) -> task<>
+{
+    const auto& [p0, p1] = getTwoPassers();
+    auto& firstDefender = (p0.get().id == secondDefenderId) ? p1.get() : p0.get();
+    ctx().isTrustCheckTieBreakPending = true;
+    firstDefender.whistingChoice.clear();
+    setWhoseTurn(firstDefender.id);
+    co_await sendWhisting(firstDefender.id, firstDefender.whistingChoice);
+    ctx().stage = GameStage::WHISTING;
+    co_await sendPlayerTurn(decidePlayerTurn());
 }
 
 [[nodiscard]] auto getTwoPassers() -> std::array<std::reference_wrapper<Player>, 2>
@@ -1008,11 +1029,16 @@ auto handleWhisting(const Message& msg) -> task<>
         co_return co_await finishDeal();
     }
     if (Context::areWhistersPass()) {
+        const auto wasTrustCheckTieBreakPending = std::exchange(ctx().isTrustCheckTieBreakPending, false);
+        if (const auto& declarer = getDeclarer(); isMiserOrTenGame(declarer) and not wasTrustCheckTieBreakPending) {
+            co_return co_await restartTrustCheckDecision(playerId);
+        }
         ctx().passGame.resetRound();
         updateDeclarerTakenTricks();
         co_return co_await finishDeal();
     }
     const auto& declarer = getDeclarer();
+    const auto contractLevel = makeContractLevel(declarer.bid);
     const auto isMiser = declarer.bid.contains(PREF_MIS);
     const auto oneWhist = Context::areWhistersPassAndWhist();
     const auto bothWhist = Context::areWhistersWhist();
@@ -1030,10 +1056,13 @@ auto handleWhisting(const Message& msg) -> task<>
         }
         co_return co_await startPlayingFromForehand();
     }
-    if (bothWhist) { co_return co_await startPlayingFromForehand(); }
+    if (bothWhist) {
+        if (contractLevel == ContractLevel::Ten) { co_await openCards(); }
+        co_return co_await startPlayingFromForehand();
+    }
     if (oneWhist) {
         if (choice != PREF_WHIST) { setWhoseTurn(playerByWhistingChoice(ctx().players, Whist).id); }
-        if (makeContractLevel(declarer.bid) == ContractLevel::Ten) {
+        if (contractLevel == ContractLevel::Ten) {
             auto& whister = playerByWhistingChoice(ctx().players, Whist);
             whister.howToPlayChoice = PREF_OPENLY;
             co_await sendHowToPlay(whister.id, whister.howToPlayChoice);
@@ -1072,29 +1101,59 @@ auto handleMakeOffer(const Message& msg) -> task<>
     if (not makeOffer) { co_return; }
     const auto playerId = makeOffer->player_id();
     const auto offerRequest = makeOffer->offer();
-    PREF_I("{}, offer: {}", PREF_V(playerId), Offer_Name(offerRequest));
+    const auto requestedTricks = makeOffer->tricks();
+    PREF_I("{}, offer: {}, tricks: {}", PREF_V(playerId), Offer_Name(offerRequest), requestedTricks);
     auto& player = ctx().player(playerId);
-    auto& declarer = getDeclarer();
-    const auto isMiser = declarer.bid.contains(PREF_MIS);
+    const auto isPassGame = ctx().passGame.now;
+    auto* declarer = isPassGame ? nullptr : &getDeclarer();
+    const auto isMiser = declarer != nullptr and declarer->bid.contains(PREF_MIS);
+    const auto isDeclarerOffer = declarer != nullptr and declarer->id == player.id;
     if (offerRequest == Offer::OFFER_REQUESTED) {
         if (player.offer != Offer::OFFER_REQUESTED) {
-            co_await sendDealCardsExcept(player.id, player.hand);
+            if (isDeclarerOffer) { co_await sendDealCardsExcept(player.id, player.hand); }
             if (isMiser) { co_await sendMiserCards(); }
         }
         for (auto& offer : players() | rv::filter(notEqualTo(playerId), &Player::id) | rv::transform(&Player::offer)) {
             offer = Offer::NO_OFFER;
         }
+        player.offerTricks = requestedTricks;
+        if (isPassGame) {
+            const auto remainingTricks = TotalTricksPerDeal - sum(players() | rv::transform(&Player::tricksTaken));
+            player.tricksTaken += remainingTricks;
+            PREF_DI(playerId, remainingTricks, player.tricksTaken);
+            for (const auto& p : players()) { co_await sendGameState(p.conn.ch); }
+            co_return co_await finishDeal();
+        }
     }
     co_await forwardToAllExcept(msg, playerId);
     player.offer = offerRequest;
     if (rng::count_if(players(), equalTo(Offer::OFFER_ACCEPTED), &Player::offer) == std::ssize(getOneOrTwoWhisters())) {
-        auto& whomAddTricks = std::invoke([&] -> Player& {
-            if (isMiser) { return playerByWhistingChoice(ctx().players, WhistingChoice::Whist); }
-            return declarer;
-        });
-        const auto remaningTricks = TotalTricksPerDeal - sum(players() | rv::transform(&Player::tricksTaken));
-        whomAddTricks.tricksTaken += remaningTricks;
-        PREF_DI(remaningTricks, whomAddTricks.tricksTaken);
+        const auto requesterIt = rng::find_if(players(), equalTo(Offer::OFFER_REQUESTED), &Player::offer);
+        assert(requesterIt != players().end());
+        auto& requester = *requesterIt;
+        const auto remainingTricks = TotalTricksPerDeal - sum(players() | rv::transform(&Player::tricksTaken));
+        if (ctx().areWhistersWhist()) {
+            auto whisters = getOneOrTwoWhisters();
+            assert(std::size(whisters) == 2);
+            assert(declarer != nullptr);
+            const auto declarerTricks = std::clamp(requester.offerTricks, 0, remainingTricks);
+            declarer->tricksTaken += declarerTricks;
+            const auto whisterTricks = remainingTricks - declarerTricks;
+            whisters[0].get().tricksTaken += (whisterTricks / 2) + (whisterTricks % 2);
+            whisters[1].get().tricksTaken += whisterTricks / 2;
+            PREF_DI(remainingTricks, declarerTricks, declarer->tricksTaken, whisterTricks);
+        } else if (isMiser or ctx().areWhistersPassAndWhist()) {
+            auto& whister = playerByWhistingChoice(ctx().players, WhistingChoice::Whist);
+            assert(declarer != nullptr);
+            const auto declarerTricks = std::clamp(requester.offerTricks, 0, remainingTricks);
+            declarer->tricksTaken += declarerTricks;
+            whister.tricksTaken += remainingTricks - declarerTricks;
+            PREF_DI(remainingTricks, declarerTricks, declarer->tricksTaken, whister.tricksTaken);
+        } else {
+            assert(declarer != nullptr);
+            declarer->tricksTaken += remainingTricks;
+            PREF_DI(remainingTricks, declarer->tricksTaken);
+        }
         resetPassGameIfNeeded();
         // TODO: create GameState once
         // TODO: send only taken tricks

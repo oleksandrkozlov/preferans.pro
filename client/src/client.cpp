@@ -235,6 +235,8 @@ struct Player {
         bid.clear();
         tricksTaken = 0;
         playsOnBehalfOf.clear();
+        offer = Offer::NO_OFFER;
+        offerTricks = 0;
     }
 
     PlayerId id;
@@ -248,6 +250,7 @@ struct Player {
     int totalMmr{};
     ReadyCheckState readyCheckState = ReadyCheckState::NOT_REQUESTED;
     Offer offer = Offer::NO_OFFER;
+    int offerTricks{};
 };
 
 struct BiddingMenu {
@@ -637,16 +640,34 @@ struct OfferButton {
     bool isPossible{};
     bool isVisible{};
     bool beenClicked{};
+    int selectedTricks = -1;
+    int currentTricks = -1;
 
     auto clear() -> void
     {
         isPossible = {};
         isVisible = {};
+        selectedTricks = -1;
+        currentTricks = -1;
     }
 };
 
 struct OfferPopUp {
     bool isVisible{};
+    PlayerId requesterId;
+};
+
+struct OfferStatusMessage {
+    bool isVisible{};
+    std::string text;
+    double visibleUntil = 0.0;
+
+    auto clear() -> void
+    {
+        isVisible = false;
+        text.clear();
+        visibleUntil = 0.0;
+    }
 };
 
 struct Mic {
@@ -751,6 +772,7 @@ struct Context {
     TalonDiscardPopUp talonDiscardPopUp;
     OfferButton offerButton;
     OfferPopUp offerPopUp;
+    OfferStatusMessage offerStatusMessage;
     Ping ping;
     std::string url;
     std::map<CardNameView, r::Vector2> cardPositions;
@@ -758,6 +780,7 @@ struct Context {
     bool isGameFreezed{};
     double tick = 0.0;
     bool isGameStarted{};
+    bool isDealFinished{};
 
     auto clear() -> void
     {
@@ -782,8 +805,11 @@ struct Context {
         cardPositions.clear();
         movingCards.clear();
         isGameFreezed = false;
+        isDealFinished = false;
         offerButton.clear();
         offerPopUp.isVisible = false;
+        offerPopUp.requesterId.clear();
+        offerStatusMessage.clear();
         talonDiscardPopUp.isVisible = false;
         talonDiscardPopUp.isDownThreeTricks = false;
         for (auto& p : players | rv::values) { p.clear(); }
@@ -1019,6 +1045,13 @@ auto removeFromLocalStorageAuthToken() -> void
     return isPlayerTurn(ctx().myPlayerId);
 }
 
+[[nodiscard]] auto isOpenNonPassGame() -> bool;
+[[nodiscard]] auto isTwoDefendersOpenMiserOrTen() -> bool;
+[[nodiscard]] auto isDeclarer(const Player& player) -> bool;
+[[nodiscard]] auto isActiveWhister(const Player& player) -> bool;
+[[nodiscard]] auto isOfferPending() -> bool;
+[[nodiscard]] auto shouldRespondToOffer(const PlayerId& requesterId) -> bool;
+
 [[nodiscard]] auto isSomeonePlayingOnBehalfOf(const PlayerId& playerId) -> bool
 {
     return not std::empty(playerId) and rng::any_of(players(), equalTo(playerId), &Player::playsOnBehalfOf);
@@ -1236,11 +1269,12 @@ auto sendMessage(const EMSCRIPTEN_WEBSOCKET_T ws, const Message& msg) -> bool
     return result;
 }
 
-[[nodiscard]] auto makeOffer(const std::string& playerId, const Offer offer) -> MakeOffer
+[[nodiscard]] auto makeOffer(const std::string& playerId, const Offer offer, const int tricks) -> MakeOffer
 {
     auto result = MakeOffer{};
     result.set_player_id(playerId);
     result.set_offer(offer);
+    result.set_tricks(tricks);
     return result;
 }
 
@@ -1334,9 +1368,9 @@ auto sendHowToPlay(const std::string& choice) -> void
     sendMessage(ctx().ws, makeMessage(makeHowToPlay(ctx().myPlayerId, choice)));
 }
 
-auto sendMakeOffer(const Offer offer) -> void
+auto sendMakeOffer(const Offer offer, const int tricks = 0) -> void
 {
-    sendMessage(ctx().ws, makeMessage(makeOffer(ctx().myPlayerId, offer)));
+    sendMessage(ctx().ws, makeMessage(makeOffer(ctx().myPlayerId, offer, tricks)));
 }
 
 auto sendPlayCard(const PlayerId& playerId, const CardNameView cardName) -> void
@@ -1503,23 +1537,14 @@ auto evaluateReadyCheck(const PlayerId& playerId) -> void
     }
 }
 
-auto resetOffer() -> void
-{
-    for (auto& player : players()) { player.offer = Offer::NO_OFFER; }
-}
-
-auto evaluateOffer(const PlayerId& playerId) -> void
-{
-    ctx().offerButton.isPossible = false;
-    ctx().offerButton.isVisible = false;
-    resetOffer();
-    ctx().player(playerId).offer = Offer::OFFER_ACCEPTED;
-}
-
 auto whenOfferDeclined(const PlayerId& playerId) -> void
 {
     if (ctx().player(playerId).offer != Offer::OFFER_DECLINED) { return; }
+    if (not std::empty(ctx().offerPopUp.requesterId) and ctx().offerPopUp.requesterId != playerId) {
+        ctx().player(ctx().offerPopUp.requesterId).offer = Offer::NO_OFFER;
+    }
     ctx().offerPopUp.isVisible = false;
+    ctx().offerPopUp.requesterId.clear();
 }
 
 auto handleReadyCheck(const Message& msg) -> void
@@ -1624,6 +1649,7 @@ auto handleForehand(const Message& msg) -> void
 
 auto handleDealCards(const Message& msg) -> void
 {
+    ctx().isDealFinished = false;
     if (not ctx().isGameStarted) {
         waitFor(1s, [] { playSound(ctx().sound.gameAboutToStarted); });
         waitFor(3s, [] {
@@ -1643,6 +1669,7 @@ auto handleDealCards(const Message& msg) -> void
         }
         return ctx().player(playerId);
     });
+    player.hand.clear();
     for (const auto& cardName : dealCards->cards()) { player.hand.emplace_back(&getCard(cardName)); }
     PREF_I("{}, hand: {}", PREF_V(player.id), player.hand | rv::transform(&Card::name));
     player.sortCards();
@@ -1652,6 +1679,11 @@ auto closeScoreSheetAndOverallScoreboard() -> void
 {
     ctx().scoreSheet.isVisible = false;
     ctx().overallScoreboard.isVisible = false;
+}
+
+[[nodiscard]] auto isAllPassGame() -> bool
+{
+    return rng::all_of(players() | rv::transform(&Player::bid), equalTo(PREF_PASS));
 }
 
 auto handlePlayerTurn(const Message& msg) -> void
@@ -1709,8 +1741,15 @@ auto handlePlayerTurn(const Message& msg) -> void
         if (isMyTurn) { ctx().myPlayer().sortCards(); }
         return;
     }
-    ctx().offerButton.isPossible = //
-        isMyTurn and ctx().stage == GameStage::PLAYING and ctx().myPlayer().bid != PREF_PASS;
+    const auto canOfferInContractGame = [&] {
+        if (not isOpenNonPassGame()) { return false; }
+        if (isDeclarer(ctx().myPlayer())) { return isMyTurn; }
+        if (isActiveWhister(ctx().myPlayer())) { return isMyTurn or isMyTurnOnBehalfOfSomeone(); }
+        return false;
+    };
+    ctx().offerButton.isPossible
+        = ctx().stage == GameStage::PLAYING and (isAllPassGame() ? isMyTurn : canOfferInContractGame());
+    if (ctx().offerPopUp.isVisible) { ctx().offerButton.isPossible = false; }
     if (not ctx().offerButton.isPossible) { ctx().offerButton.isVisible = false; }
     if (not isMyTurn) { return; }
     if (ctx().stage == WITHOUT_TALON) {
@@ -1791,14 +1830,33 @@ auto handleMakeOffer(const Message& msg) -> void
     const auto makeOffer = makeMethod<MakeOffer>(msg);
     if (not makeOffer) { return; }
     const auto playerId = std::string{makeOffer->player_id()};
-    ctx().player(playerId).offer = makeOffer->offer();
-    PREF_I("{}, state: {}", PREF_V(playerId), Offer_Name(ctx().player(playerId).offer));
-    if (ctx().player(playerId).offer == Offer::OFFER_REQUESTED) {
-        ctx().offerPopUp.isVisible = true;
-        evaluateOffer(playerId);
+    const auto offer = makeOffer->offer();
+    ctx().player(playerId).offer = offer;
+    ctx().player(playerId).offerTricks = makeOffer->tricks();
+    PREF_I(
+        "{}, state: {}, tricks: {}",
+        PREF_V(playerId),
+        Offer_Name(ctx().player(playerId).offer),
+        ctx().player(playerId).offerTricks);
+    if (offer == Offer::OFFER_REQUESTED) {
+        ctx().offerPopUp.requesterId = playerId;
+        ctx().offerButton.isPossible = false;
+        ctx().offerButton.isVisible = false;
+        ctx().offerPopUp.isVisible = shouldRespondToOffer(playerId);
         return;
     }
-    whenOfferDeclined(playerId);
+    if (offer == Offer::OFFER_DECLINED) {
+        ctx().offerStatusMessage.text
+            = fmt::format("{}: {}", ctx().player(playerId).name, ctx().localizeText(GameText::OfferDeclined));
+        ctx().offerStatusMessage.visibleUntil = ctx().window.GetTime() + 1.5;
+        ctx().offerStatusMessage.isVisible = true;
+        ctx().offerPopUp.isVisible = false;
+        if (not std::empty(ctx().offerPopUp.requesterId) and ctx().offerPopUp.requesterId != playerId) {
+            ctx().player(ctx().offerPopUp.requesterId).offer = Offer::NO_OFFER;
+            ctx().offerPopUp.requesterId.clear();
+        }
+        whenOfferDeclined(playerId);
+    }
 }
 
 auto handlePlayCard(const Message& msg) -> void
@@ -1895,6 +1953,7 @@ auto handleDealFinished(const Message& msg) -> void
 {
     const auto dealFinished = makeMethod<DealFinished>(msg);
     if (not dealFinished) { return; }
+    ctx().isDealFinished = true;
     ctx().offerButton.beenClicked = false;
     const auto isGameOver = dealFinished->is_game_over();
     PREF_DI(isGameOver);
@@ -2940,6 +2999,7 @@ auto drawCardShineEffect(const bool isHovered, const r::Vector2& cardPosition) -
 
 auto drawHandTurnAura(const r::Rectangle& cardsRect) -> void
 {
+    if (isOfferPending() or ctx().isDealFinished) { return; };
     static constexpr auto roundness = 0.05f;
     static constexpr auto segments = 0;
     static constexpr auto margin = 2.f;
@@ -2996,6 +3056,7 @@ auto drawCards(const r::Vector2 pos, Player& player, const Shift shift) -> void
         const auto isTalonSelectionLocked
             = isMyHand and isTalonPicking and (std::size(ctx().discardedTalon) == 2);
         const auto isHovered = (not ctx().isGameFreezed and isRightTurn)
+            and not isOfferPending()
             and not isTalonRevealPending
             and (ctx().stage == GameStage::PLAYING or ctx().stage == GameStage::TALON_PICKING)
             and not ctx().bidding.isVisible
@@ -3032,16 +3093,19 @@ auto drawBackCard(const float x, const float y) -> void
     border.DrawRoundedLines(roundness, segments, borderThick, getGuiColor(BORDER_COLOR_NORMAL));
 }
 
-auto drawBackCards(const int cardCount, const r::Vector2& pos) -> void
+auto drawBackCards(const int cardCount, const r::Vector2& pos, const float cardGapY) -> void
 {
-    const auto cardGapY = handCardGapY(static_cast<std::size_t>(std::max(1, cardCount)));
     for (auto i = 0; i < cardCount; ++i) { drawBackCard(pos.x, pos.y + static_cast<float>(i) * cardGapY); }
 }
 
-auto drawCards(const r::Vector2& pos, Player& player, const Shift shift, const int cardCount) -> void
+auto drawCards(const r::Vector2& pos, Player& player, const Shift shift, const int cardCount, const float cardGapY) -> void
 {
     if (cardCount == 0) { return; }
-    std::empty(player.hand) ? drawBackCards(cardCount, pos) : drawCards(pos, player, shift);
+    if (std::empty(player.hand)) {
+        drawBackCards(cardCount, pos, cardGapY);
+        return;
+    }
+    drawCards(pos, player, shift);
 }
 
 [[nodiscard]] auto drawGameText(const r::Vector2& pos, const std::string_view gameText, const Shift shift)
@@ -3105,14 +3169,118 @@ template<typename... Args>
     return std::array{getCodepoint(args)...};
 }
 
-[[nodiscard]] auto offerGameText() -> GameText
+[[nodiscard]] auto isOpenNonPassGame() -> bool
 {
-    return isMiser() ? GameText::NoMoreForMe : GameText::RemainingMine;
+    const auto whistsCount = rng::count_if(players(), equalTo(std::string_view{PREF_WHIST}), &Player::whistingChoice);
+    return not isAllPassGame()
+        and (isMiser() or (isTenGame() and whistsCount == 2)
+             or rng::any_of(players(), equalTo(std::string_view{PREF_OPENLY}), &Player::howToPlayChoice));
+}
+
+[[nodiscard]] auto isTwoDefendersOpenMiserOrTen() -> bool
+{
+    return (isMiser() or isTenGame())
+        and rng::count_if(players(), equalTo(std::string_view{PREF_WHIST}), &Player::whistingChoice) == 2;
+}
+
+[[nodiscard]] auto declarerId() -> std::optional<PlayerId>
+{
+    const auto it = rng::find_if(players(), [](const Player& player) { return player.bid != PREF_PASS; });
+    if (it == players().end()) { return std::nullopt; }
+    return it->id;
+}
+
+[[nodiscard]] auto declaredOfferTotalTricks() -> int
+{
+    const auto declarer = declarerId();
+    if (not declarer.has_value()) { return 0; }
+    const auto declarerBid = ctx().player(*declarer).bid;
+    if (declarerBid == PREF_MISER) { return 0; }
+    if (declarerBid.starts_with(PREF_SIX)) { return 6; }
+    if (declarerBid.starts_with(PREF_SEVEN)) { return 7; }
+    if (declarerBid.starts_with(PREF_EIGHT)) { return 8; }
+    if (declarerBid.starts_with(PREF_NINE)) { return 9; }
+    if (declarerBid.starts_with(PREF_TEN)) { return 10; }
+    return 0;
+}
+
+[[nodiscard]] auto isDeclarer(const Player& player) -> bool
+{
+    return player.bid != PREF_PASS;
+}
+
+[[nodiscard]] auto isActiveWhister(const Player& player) -> bool
+{
+    return player.whistingChoice == PREF_WHIST;
+}
+
+[[nodiscard]] auto shouldRespondToOffer(const PlayerId& requesterId) -> bool
+{
+    if (requesterId == ctx().myPlayerId) { return false; }
+    if (not isOpenNonPassGame()) { return true; }
+    const auto& requester = ctx().player(requesterId);
+    if (isDeclarer(requester)) { return isActiveWhister(ctx().myPlayer()); }
+    if (isTwoDefendersOpenMiserOrTen()) { return true; }
+    const auto declarer = declarerId();
+    return declarer.has_value() and *declarer == ctx().myPlayerId;
+}
+
+[[nodiscard]] auto offerCurrentTricks(const Player& requester) -> int
+{
+    if (isOpenNonPassGame() and isActiveWhister(requester)) {
+        const auto declarer = declarerId();
+        assert(declarer.has_value());
+        return ctx().player(*declarer).tricksTaken;
+    }
+    return requester.tricksTaken;
+}
+
+[[nodiscard]] auto offerTextKey(const Player& requester) -> GameText
+{
+    if (isOpenNonPassGame() and isActiveWhister(requester)) { return GameText::GiveMoreTotal; }
+    return GameText::TakeMoreTotal;
+}
+
+[[nodiscard]] auto offerTricksText(const Player& requester, const int extraTricks) -> std::string
+{
+    const auto currentTricks = offerCurrentTricks(requester);
+    const auto text = ctx().localizeText(offerTextKey(requester));
+    return fmt::format(fmt::runtime(text), extraTricks, currentTricks + extraTricks);
+}
+
+[[nodiscard]] auto offerGameText(const Player& requester) -> std::string
+{
+    constexpr auto totalTricksPerDeal = 10;
+    const auto remainingTricks = totalTricksPerDeal - sum(players() | rv::transform(&Player::tricksTaken));
+    const auto text = ctx().localizeText(GameText::TakeMoreTotal);
+    return fmt::format(fmt::runtime(text), remainingTricks, requester.tricksTaken + remainingTricks);
+}
+
+[[nodiscard]] auto isOfferPending() -> bool
+{
+    return rng::any_of(players(), equalTo(Offer::OFFER_REQUESTED), &Player::offer);
+}
+
+[[nodiscard]] auto isOfferUiVisible() -> bool
+{
+    return ctx().offerPopUp.isVisible or ctx().offerButton.isVisible;
+}
+
+[[nodiscard]] auto currentOfferText(const bool beenClicked, const Player& requester, const std::optional<int> extraTricks = std::nullopt)
+{
+    const auto offerTarget
+        = extraTricks ? offerTricksText(requester, *extraTricks) : offerGameText(requester);
+    if (isAllPassGame()) { return offerTarget; }
+    const auto offerOrReveal = beenClicked or (isOpenNonPassGame() and isActiveWhister(requester))
+        ? GameText::Offer
+        : GameText::RevealCards;
+    return fmt::format("{}: {}", ctx().localizeText(offerOrReveal), offerTarget);
 }
 
 auto drawOfferButton() -> void
 {
-    if (ctx().myPlayer().whistingChoice == PREF_PASS) { return; }
+    const auto& requester = ctx().myPlayer();
+    if (requester.whistingChoice == PREF_PASS and requester.bid == PREF_PASS and not isAllPassGame()) { return; }
 
     static constexpr auto buttonH = VirtualH * 0.06f;
     static constexpr auto shift = 450.f; // TOOD: make reative or calculate properly
@@ -3143,14 +3311,48 @@ auto drawOfferButton() -> void
     if (ctx().offerButton.isVisible) {
         assert(ctx().offerButton.isPossible);
         assert(not ctx().offerPopUp.isVisible);
-        const auto offerOrReveal = ctx().offerButton.beenClicked ? GameText::Offer : GameText::RevealCardsAndOffer;
+        const auto useToggleGroup = isOpenNonPassGame();
+        const auto maxTricks = static_cast<int>(std::ssize(ctx().myPlayer().hand));
+        const auto currentTricks = offerCurrentTricks(requester);
+        if (useToggleGroup
+            and (ctx().offerButton.selectedTricks < 0 or ctx().offerButton.selectedTricks > maxTricks
+                 or ctx().offerButton.currentTricks != currentTricks)) {
+            const auto defaultExtraTricks = declaredOfferTotalTricks() - currentTricks;
+            ctx().offerButton.selectedTricks = std::clamp(defaultExtraTricks, 0, maxTricks);
+            ctx().offerButton.currentTricks = currentTricks;
+        }
+        const auto extraTricks = useToggleGroup ? ctx().offerButton.selectedTricks : 0;
         const auto offerText
-            = fmt::format("{}: {}", ctx().localizeText(offerOrReveal), ctx().localizeText(offerGameText()));
-        const auto offerW = (pad * 2.0f) + ctx().fontM.MeasureText(offerText.c_str(), ctx().fontSizeM(), FontSpacing).x;
-        if (GuiButton({(VirtualW * 0.5f) - (offerW * 0.5f), VirtualH - shift, offerW, buttonH}, offerText.c_str())) {
-            sendMakeOffer(Offer::OFFER_REQUESTED);
+            = currentOfferText(ctx().offerButton.beenClicked, requester, useToggleGroup ? std::optional{extraTricks} : std::nullopt);
+        const auto maxOfferText
+            = currentOfferText(ctx().offerButton.beenClicked, requester, useToggleGroup ? std::optional{maxTricks} : std::nullopt);
+        const auto offerW = (pad * 2.0f) + ctx().fontM.MeasureText(maxOfferText.c_str(), ctx().fontSizeM(), FontSpacing).x;
+        const auto buttonX = (VirtualW * 0.5f) - (offerW * 0.5f);
+        if (useToggleGroup) {
+            auto toggleIndex = extraTricks;
+            const auto toggleText = rv::iota(0, maxTricks + 1)
+                | rv::transform(static_cast<std::string (*)(int)>(std::to_string))
+                | rv::intersperse(";")
+                | rv::join
+                | ToString;
+            const auto toggleItemW = (pad * 1.2f)
+                + ctx().fontM.MeasureText(std::to_string(maxTricks).c_str(), ctx().fontSizeM(), FontSpacing).x;
+            const auto togglePad = static_cast<float>(GuiGetStyle(TOGGLE, GROUP_PADDING));
+            const auto toggleGroupW
+                = (toggleItemW * static_cast<float>(maxTricks + 1)) + (togglePad * static_cast<float>(maxTricks));
+            const auto toggleX = (VirtualW * 0.5f) - (toggleGroupW * 0.5f);
+            GuiToggleGroup(
+                {toggleX, buttonY - buttonH - (pad * 0.5f), toggleItemW, buttonH * 0.7f}, toggleText.c_str(), &toggleIndex);
+            ctx().offerButton.selectedTricks = std::clamp(toggleIndex, 0, maxTricks);
+        }
+        if (GuiButton({buttonX, buttonY, offerW, buttonH}, offerText.c_str())) {
+            ctx().myPlayer().offerTricks = useToggleGroup ? ctx().offerButton.selectedTricks : 0;
+            ctx().myPlayer().offer = Offer::OFFER_REQUESTED;
+            ctx().offerPopUp.requesterId = ctx().myPlayerId;
+            sendMakeOffer(Offer::OFFER_REQUESTED, ctx().myPlayer().offerTricks);
             ctx().offerButton.beenClicked = true;
-            evaluateOffer(ctx().myPlayerId);
+            ctx().offerButton.isPossible = false;
+            ctx().offerButton.isVisible = false;
             return;
         }
     }
@@ -3170,6 +3372,7 @@ auto drawOfferButton() -> void
     const auto textSize = measureGuiText(text);
     const auto textX = pos.x + (totalWidth - textSize.x) * 0.5f;
     const auto textY = (pos.y + BidOriginY + BidMenuH - textSize.y) * 0.5f;
+    if (isOfferPending() or isOfferUiVisible()) { return textY; };
     if (ctx().isGameFreezed
         or ((not isPlayerTurn(playerId) or isSomeonePlayingOnBehalfOf(playerId))
             and not isPlayerTurnOnBehalfOfSomeone)) {
@@ -3219,6 +3422,13 @@ auto drawOfferButton() -> void
 {
     return not std::empty(hand) ? std::ssize(hand)
                                 : (isRight(drawPosition) ? ctx().rightCardCount : ctx().leftCardCount);
+}
+
+[[nodiscard]] auto sideHandGapY(const int cardCount, const int tricksTaken) -> float
+{
+    const auto defaultGapY = handCardGapY(static_cast<std::size_t>(cardCount));
+    if (cardCount < 10 or tricksTaken == 0) { return defaultGapY; }
+    return defaultGapY * 0.9f;
 }
 
 [[nodiscard]] auto shouldHideBid(const Player& player) -> bool
@@ -3292,14 +3502,20 @@ auto drawMyHand() -> void
         or drawBid(cardLastRightCenterPos, player, Positive | Horizont);
     drawSpeechBubble({playerNameCenter.x, yourTurnTopY + gap * 2}, ctx().myPlayerId, Left);
     static constexpr auto shift = 40.0f; // TOOD: make reative or calculate properly
-    if (ctx().offerPopUp.isVisible) {
-        const auto playerName = players()
-            | rv::filter([](const Player& player) { return player.bid != PREF_PASS; })
-            | rv::transform(&Player::name)
-            | rv::join
-            | ToString;
-        assert(not std::empty(playerName));
-        const auto offerText = fmt::format("{}: {}", playerName, ctx().localizeText(offerGameText()));
+    if (ctx().offerStatusMessage.isVisible) {
+        if (ctx().window.GetTime() >= ctx().offerStatusMessage.visibleUntil) {
+            ctx().offerStatusMessage.clear();
+        } else {
+            drawGuiLabelCentered(ctx().offerStatusMessage.text, {VirtualW * 0.5f, yourTurnTopY - shift});
+        }
+    }
+    if (not std::empty(ctx().offerPopUp.requesterId)) {
+        const auto& requester = ctx().player(ctx().offerPopUp.requesterId);
+        const auto offerText = fmt::format(
+            "{}: {}",
+            requester.name,
+            isOpenNonPassGame() ? offerTricksText(requester, requester.offerTricks)
+                                : offerGameText(requester));
         drawGuiLabelCentered(offerText, {VirtualW * 0.5f, yourTurnTopY - shift});
     }
     // drawDebugHorzLine(cardCenterY, "cardCenterY");
@@ -3320,14 +3536,15 @@ auto drawOpponentHand(const DrawPosition drawPosition) -> void
     });
     auto& player = ctx().player(playerId);
     const auto cardCount = pref::cardCount(player.hand, drawPosition);
-    const auto totalHeight = (static_cast<float>(cardCount) - 1.f) * handCardGapY(static_cast<std::size_t>(cardCount)) + CardHeight;
+    const auto cardGapY = sideHandGapY(cardCount, player.tricksTaken);
+    const auto totalHeight = (static_cast<float>(cardCount) - 1.f) * cardGapY + CardHeight;
     const auto cardFirstLeftTopPos = r::Vector2{
         isRight(drawPosition) ? VirtualW - CardWidth - CardBorderMargin : CardBorderMargin,
         (VirtualH - totalHeight) * 0.5f};
     const auto cardCenterX = cardFirstLeftTopPos.x + CardWidth * 0.5f;
     const auto cardFirstCenterTopPos = r::Vector2{cardCenterX, cardFirstLeftTopPos.y};
     const auto cardLastCenterBottomPos = r::Vector2{cardCenterX, cardFirstLeftTopPos.y + totalHeight};
-    drawCards(cardFirstLeftTopPos, player, (isRight(drawPosition) ? Negative : Positive) | Vertical, cardCount);
+    drawCards(cardFirstLeftTopPos, player, (isRight(drawPosition) ? Negative : Positive) | Vertical, cardCount, cardGapY);
     const auto playerNameCenter = drawPlayerName(cardFirstCenterTopPos, player, Negative | Vertical);
     drawWhist(cardLastCenterBottomPos, player, Positive | Vertical) //
         or drawBid(cardLastCenterBottomPos, player, Positive | Vertical);
@@ -3663,7 +3880,7 @@ auto drawWhistingOrMiserMenu() -> void
     const auto playerName = (std::empty(bid) or std::empty(ctx().bidding.playerId))
         ? std::string{}
         : ctx().player(ctx().bidding.playerId).name;
-    const auto isPassGame = rng::all_of(bids, equalTo(PREF_PASS));
+    const auto isPassGame = isAllPassGame();
     const auto bidText = isPassGame and ctx().bidding.passRound != 0
         ? ctx().localizeText(GameText::Passing) + prettifyNumber(ctx().bidding.passRound)
         : std::string{ctx().localizeBid(bid)};
@@ -3976,7 +4193,10 @@ auto drawGoDownButton() -> void
     if (ctx().stage != GameStage::TALON_PICKING or not isMyTurn() or isMiser()) { return; }
     withGuiState(
         STATE_DISABLED, std::size(ctx().discardedTalon) == 2U or not std::empty(ctx().pendingTalonReveal), [&] {
-            withGuiState(STATE_PRESSED, ctx().talonDiscardPopUp.isVisible, [&] {
+            withGuiState(
+                STATE_PRESSED,
+                ctx().talonDiscardPopUp.isVisible and ctx().talonDiscardPopUp.isDownThreeTricks,
+                [&] {
                 drawToolbarButton(6, HandshakeIcon, [&] {
                     ctx().talonDiscardPopUp.isVisible = true;
                     ctx().talonDiscardPopUp.isDownThreeTricks = true;
@@ -3987,8 +4207,11 @@ auto drawGoDownButton() -> void
 
 auto drawHandshakeOfferButton() -> void
 {
-    if (const auto& bid = ctx().myPlayer().bid;
-        ctx().stage != GameStage::PLAYING or std::empty(bid) or bid == PREF_PASS) {
+    const auto& player = ctx().myPlayer();
+    if (ctx().stage != GameStage::PLAYING) { return; }
+    if (not isAllPassGame() and not isOpenNonPassGame()) { return; }
+    if ((std::empty(player.bid) or player.bid == PREF_PASS) and not isAllPassGame()
+        and not (isOpenNonPassGame() and player.whistingChoice == PREF_WHIST)) {
         return;
     }
     withGuiState(
@@ -5522,6 +5745,7 @@ auto handleMousePress() -> void
 {
     if (not r::Mouse::IsButtonPressed(MOUSE_LEFT_BUTTON) or ctx().isGameFreezed) { return; }
     if (ctx().stage == GameStage::PLAYING) {
+        if (isOfferPending()) { return; }
         if ((not isMyTurn() or isSomeonePlayingOnMyBehalf()) and not isMyTurnOnBehalfOfSomeone()) { return; }
         const auto& playerId
             = std::invoke([&] { return isMyTurn() ? ctx().myPlayerId : ctx().myPlayer().playsOnBehalfOf; });

@@ -142,6 +142,7 @@ enum Offer {
 message MakeOffer {
     string player_id = 1;
     Offer offer = 2;
+    int32 tricks = 3;
 }
 
 message MiserCards {

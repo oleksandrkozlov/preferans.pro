@@ -135,6 +135,7 @@ inline constexpr auto PREF_ACE_OF_HEARTS_CARD = 0x1F0B1;
     PREF_X(PREF_ACE_OF_SPADES) PREF_X(PREF_ACE_OF_CLUBS) PREF_X(PREF_ACE_OF_DIAMONDS) PREF_X(PREF_ACE_OF_HEARTS)
 // clang-format on
 
+#define PREF_NUMBER_00 "0"
 #define PREF_NUMBER_01 "❶"
 #define PREF_NUMBER_02 "❷"
 #define PREF_NUMBER_03 "❸"
@@ -164,6 +165,7 @@ inline constexpr auto PREF_ACE_OF_HEARTS_CARD = 0x1F0B1;
 [[nodiscard]] constexpr auto prettifyNumber(const int tricksTaken) noexcept -> std::string_view
 {
     switch (tricksTaken) {
+    case 0: return PREF_NUMBER_00;
     case 1: return PREF_NUMBER_01;
     case 2: return PREF_NUMBER_02;
     case 3: return PREF_NUMBER_03;
@@ -281,14 +283,17 @@ enum class GameLang : std::size_t {
     PREF_X(Passing, "Passing", "Розпаси", "Распасы")                                                                   \
     PREF_X(PassingProgression, "Passing progression", "Прогресія розпасів", "Прогрессия распасов")                     \
     PREF_X(Phrases, "PHRASES", "ФРАЗИ", "ФРАЗЫ")                                                                       \
-    PREF_X(PlayerLeftTheGame, "left the game.", "покинув(а) гру.", "покинул(ла) игру.")                                       \
+    PREF_X(PlayerLeftTheGame, "left the game.", "покинув(а) гру.", "покинул(ла) игру.")                                \
     PREF_X(PoolLength, "Pool length", "Довжина пульки", "Длина пульки")                                                \
     PREF_X(Preferans, "PREFERANS", "ПРЕФЕРАНС", "ПРЕФЕРАНС")                                                           \
     PREF_X(Ranked, "Ranked", "Рейтингова", "Рейтинговая")                                                              \
-    PREF_X(RemainingMine, "Remaining — mine", "Решта — мої", "Остальные — мои")                                        \
+    PREF_X(TakeMoreTotal, "Take {} more, total {}", "Беру ще {}, всього {}", "Беру ещё {}, всего {}")                  \
+    PREF_X(GiveMoreTotal, "Give {} more, total {}", "Віддаю ще {}, всього {}", "Отдаю ещё {}, всего {}")               \
+    PREF_X(OfferAccepted, "Offer accepted", "Пропозицію прийнято", "Предложение принято")                              \
+    PREF_X(OfferDeclined, "Offer declined", "Пропозицію відхилено", "Предложение отклонено")                           \
     PREF_X(ResponsibleGreedy, "Responsible/Greedy", "Відповідальний/Жлобський", "Ответственный/Жлобский")              \
     PREF_X(Result, "RESULT", "РЕЗУЛЬТАТ", "РЕЗУЛЬТАТ")                                                                 \
-    PREF_X(RevealCardsAndOffer, "Reveal cards and offer", "Відкрити карти та запропонувати", "Открыть карты и предложить") \
+    PREF_X(RevealCards, "Reveal cards", "Відкрити карти", "Открыть карты")                                             \
     PREF_X(Reveals, "Reveals", "Відкривається", "Открывается")                                                         \
     PREF_X(Send, "Send", "Надіслати", "Отправить")                                                                     \
     PREF_X(Settings, "SETTINGS", "НАЛАШТУВАННЯ", "НАСТРОЙКИ")                                                          \
