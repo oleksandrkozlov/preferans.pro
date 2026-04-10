@@ -341,6 +341,71 @@
     .deals-table .col-decision { width: auto; }
     .deals-table th, .deals-table td { white-space: normal; overflow-wrap: anywhere; }
     .deals-table .cards { white-space: normal; }
+    .deal-tricks {
+      border-top: 1px solid var(--table-border);
+      padding: 6px 8px 8px;
+      background: rgba(37, 43, 60, 0.35);
+    }
+    .deal-tricks-title {
+      margin: 0 0 6px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .deal-tricks-grid {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 8px;
+    }
+    .trick-card {
+      flex: 1 1 0;
+      min-width: 0;
+      border: 1px solid var(--table-border);
+      border-radius: 8px;
+      background: var(--table-bg-alt);
+      padding: 6px;
+    }
+    .trick-head {
+      margin-bottom: 6px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .trick-plays {
+      display: grid;
+      gap: 4px;
+    }
+    .trick-play {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 6px;
+      align-items: center;
+      padding: 4px 6px;
+      border: 1px solid rgba(126, 138, 168, 0.35);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .trick-play.is-winner {
+      border-color: rgba(139, 233, 253, 0.75);
+      background: rgba(139, 233, 253, 0.12);
+      box-shadow: inset 0 0 0 1px rgba(139, 233, 253, 0.18);
+    }
+    .trick-play-label {
+      min-width: 0;
+      font-size: 11px;
+      color: #d7def5;
+      overflow-wrap: anywhere;
+    }
+    .trick-play.is-winner .trick-play-label {
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .trick-play-card {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
     .cards-list {
       display: flex;
       flex-wrap: wrap;
@@ -354,6 +419,7 @@
       justify-content: center;
       padding: 2px;
       border: 1px solid rgba(139, 233, 253, 0.65);
+      border-style: dashed;
       border-radius: 6px;
       background: rgba(139, 233, 253, 0.08);
     }
@@ -605,6 +671,51 @@
           : (card.isTalon ? "Talon card" : "Discarded card");
         return `<span class="${classes}" title="${title}">${html}</span>`;
       }).join("")}</span>`;
+    }
+
+    function trickPlayLabel(playerId) {
+      return playerId ? nameByPlayerId(playerId) : "Talon";
+    }
+
+    function dealTricksHtml(deal) {
+      const tricks = Array.isArray(deal?.trick_history) ? deal.trick_history : [];
+      if (tricks.length === 0) {
+        return ``;
+      }
+      return `
+        <div class="deal-tricks">
+          <div class="deal-tricks-title">Tricks</div>
+          <div class="deal-tricks-grid">
+            ${tricks.map((trick, index) => {
+              const winnerId = String(trick?.winner_player_id || "");
+              const plays = Array.isArray(trick?.plays) ? [...trick.plays] : [];
+              plays.sort((lhs, rhs) => {
+                const lhsIsTalon = !String(lhs?.player_id || "");
+                const rhsIsTalon = !String(rhs?.player_id || "");
+                if (lhsIsTalon === rhsIsTalon) return 0;
+                return lhsIsTalon ? -1 : 1;
+              });
+              return `
+                <div class="trick-card">
+                  <div class="trick-head">Trick ${index + 1}</div>
+                  <div class="trick-plays">
+                    ${plays.map(play => {
+                      const playerId = String(play?.player_id || "");
+                      const isWinner = winnerId !== "" && playerId === winnerId;
+                      return `
+                        <div class="trick-play ${isWinner ? "is-winner" : ""}">
+                          <div class="trick-play-label">${esc(trickPlayLabel(playerId))}</div>
+                          <div class="trick-play-card">${cardImageHtml(play?.card || "")}</div>
+                        </div>
+                      `;
+                    }).join("")}
+                  </div>
+                </div>
+              `;
+            }).join("")}
+          </div>
+        </div>
+      `;
     }
 
     function cardAssetName(name) {
@@ -1778,6 +1889,7 @@
                   </tr>
                 </tbody>
               </table>
+              ${dealTricksHtml(deal)}
             </div>
           `).join("")}
         </div>

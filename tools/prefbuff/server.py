@@ -131,6 +131,19 @@ class DataStore:
                     }
                     for pid, score in sorted(deal.scores.items(), key=lambda kv: kv[0])
                 }
+                trick_history = [
+                    {
+                        "winner_player_id": trick.winner_player_id,
+                        "plays": [
+                            {
+                                "player_id": play.player_id,
+                                "card": play.card,
+                            }
+                            for play in trick.plays
+                        ],
+                    }
+                    for trick in deal.trick_history
+                ]
                 deals.append(
                     {
                         "id": deal.id,
@@ -143,6 +156,7 @@ class DataStore:
                         "decisions": decisions,
                         "tricks": tricks,
                         "scores": scores,
+                        "trick_history": trick_history,
                     }
                 )
             games[str(game.id)] = {"id": game.id, "deals": deals}
