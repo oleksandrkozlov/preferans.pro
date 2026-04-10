@@ -133,7 +133,8 @@ inline auto addOrUpdateGameDeal(
     const std::int32_t gameId,
     const std::int32_t dealId,
     const PlayerCardsRange& playerCards,
-    const std::vector<CardName>& talon) -> void
+    const std::vector<CardName>& talon,
+    const std::vector<CardName>& discardedCards) -> void
 {
     auto& games = *gameData.mutable_games();
     const auto gameIt = rng::find(games, gameId, &Game::id);
@@ -145,11 +146,13 @@ inline auto addOrUpdateGameDeal(
     deal->set_id(dealId);
     deal->clear_hands();
     deal->clear_talon();
+    deal->clear_discarded_cards();
     for (const auto& [playerId, cards] : playerCards) {
         auto& series = (*deal->mutable_hands())[playerId];
         for (const auto& card : cards) { series.add_cards(card); }
     }
     for (const auto& card : talon) { deal->add_talon(card); }
+    for (const auto& card : discardedCards) { deal->add_discarded_cards(card); }
 }
 
 template<typename PlayerChoicesRange, typename PlayerTricksRange, typename PlayerScoresRange>

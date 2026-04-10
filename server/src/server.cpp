@@ -550,7 +550,13 @@ auto dealFinished(const bool isDownThreeTricks) -> task<bool>
     const auto tricks
         = players() | rv::transform([](const Player& player) { return std::pair{player.id, player.tricksTaken}; })
         | rng::to_vector;
-    addOrUpdateGameDeal(ctx().gameData, ctx().gameId, ctx().dealId, ctx().pendingDealHands, ctx().pendingDealTalon);
+    addOrUpdateGameDeal(
+        ctx().gameData,
+        ctx().gameId,
+        ctx().dealId,
+        ctx().pendingDealHands,
+        ctx().pendingDealTalon,
+        ctx().talon.discardedCards);
 
     ctx().gameDuration = pref::durationInSec(ctx().gameStarted);
     PREF_I("gameId: {} duration: {}", ctx().gameId, formatDuration(ctx().gameDuration));

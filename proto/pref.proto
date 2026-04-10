@@ -248,6 +248,7 @@ message Deal {
   map<string /*player_id*/, string /*contract or whist/pass*/> decisions = 6;
   map<string /*player_id*/, int32 /*tricks taken*/> tricks = 7;
   map<string /*player_id*/, DealPlayerScore> scores = 8;
+  repeated string discarded_cards = 9;
 }
 
 message Game {
