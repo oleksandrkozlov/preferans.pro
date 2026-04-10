@@ -150,6 +150,25 @@
       background: #252b3c;
       border: 1px solid rgba(126, 138, 168, 0.45);
     }
+    .trend-point {
+      fill: #252b3c;
+      stroke-width: 1.6;
+    }
+    .trend-label {
+      font-size: 9px;
+      font-weight: 700;
+      paint-order: stroke;
+      stroke: rgba(37, 43, 60, 0.95);
+      stroke-width: 2px;
+      stroke-linejoin: round;
+    }
+    .trend-hover-line {
+      stroke: var(--yellow);
+      stroke-width: 1;
+      stroke-dasharray: 3 3;
+      display: none;
+      pointer-events: none;
+    }
     .hand-stats {
       border: 0;
       border-radius: 0;
@@ -234,6 +253,18 @@
       padding: 8px 9px;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
       display: none;
+    }
+    .stat-tooltip.score-good {
+      color: var(--green);
+      border-color: rgba(80, 250, 123, 0.55);
+    }
+    .stat-tooltip.score-bad {
+      color: var(--red);
+      border-color: rgba(255, 85, 85, 0.55);
+    }
+    .stat-tooltip.score-mid {
+      color: var(--yellow);
+      border-color: rgba(241, 250, 140, 0.55);
     }
     table {
       width: 100%;
@@ -1145,11 +1176,20 @@
       };
     }
 
-    function buildMmrTrendSvg(games) {
+    function buildMmrTrendSvg(games, width = 560) {
+      const trendColor = (value) => {
+        if (value > 0) return "var(--green)";
+        if (value < 0) return "var(--red)";
+        return "var(--orange)";
+      };
       const asc = [...games].sort((a, b) => Number(a.id) - Number(b.id));
       if (asc.length === 0) {
         return {
-          svg: `<svg class="trend-svg" viewBox="0 0 560 96" preserveAspectRatio="none"></svg>`,
+          svg: `<svg class="trend-svg" viewBox="0 0 ${width} 96"><line class="trend-hover-line" x1="0" y1="0" x2="0" y2="96"></line></svg>`,
+          cumulative: [],
+          width,
+          height: 96,
+          padX: 6,
           start: 0,
           end: 0
         };
@@ -1159,7 +1199,6 @@
         running += Number(g.mmr || 0);
         return running;
       });
-      const width = 560;
       const height = 96;
       const padX = 6;
       const padY = 8;
@@ -1169,22 +1208,117 @@
       const innerW = Math.max(1, width - padX * 2);
       const innerH = Math.max(1, height - padY * 2);
       const stepX = cumulative.length > 1 ? innerW / (cumulative.length - 1) : 0;
-      const points = cumulative.map((v, i) => {
+      const pointData = cumulative.map((v, i) => {
         const x = padX + i * stepX;
         const y = padY + (1 - ((v - minV) / span)) * innerH;
-        return `${x.toFixed(2)},${y.toFixed(2)}`;
-      }).join(" ");
+        return { value: v, x, y };
+      });
+      const selectTrendLabelIndices = (points) => {
+        if (points.length <= 2) return new Set(points.map((_, i) => i));
+        const chosen = new Set([0, points.length - 1]);
+        const targetLabelCount = Math.min(12, Math.max(5, Math.ceil(points.length / 4)));
+        const diffThreshold = Math.max(6, span / Math.max(3, targetLabelCount - 1));
+        const minLabelDx = Math.max(16, innerW / Math.max(4, targetLabelCount - 1) * 0.6);
+        const minLabelDy = 11;
+        let lastLabeledIndex = 0;
+        for (let i = 1; i < points.length - 1; i += 1) {
+          const prev = points[i - 1].value;
+          const curr = points[i].value;
+          const next = points[i + 1].value;
+          const isPeak = curr > prev && curr >= next;
+          const isValley = curr < prev && curr <= next;
+          const touchesZero = curr === 0 || (prev < 0 && curr > 0) || (prev > 0 && curr < 0);
+          const mmrMovedEnough = Math.abs(curr - points[lastLabeledIndex].value) >= diffThreshold;
+          const hasHorizontalRoom = (points[i].x - points[lastLabeledIndex].x) >= minLabelDx;
+          if (isPeak || isValley || touchesZero || (mmrMovedEnough && hasHorizontalRoom)) {
+            chosen.add(i);
+            lastLabeledIndex = i;
+          }
+        }
+        const candidates = points
+          .map((point, i) => {
+            const prev = i > 0 ? points[i - 1].value : point.value;
+            const next = i < points.length - 1 ? points[i + 1].value : point.value;
+            return {
+              i,
+              magnitude: Math.abs(point.value),
+              delta: Math.max(Math.abs(point.value - prev), Math.abs(next - point.value))
+            };
+          })
+          .sort((a, b) => (b.delta - a.delta) || (b.magnitude - a.magnitude) || (a.i - b.i));
+        for (const candidate of candidates) {
+          if (chosen.size >= targetLabelCount) break;
+          if (chosen.has(candidate.i)) continue;
+          const point = points[candidate.i];
+          const nearestChosenDiff = Math.min(...[...chosen].map(index => Math.abs(points[index].value - point.value)));
+          if (nearestChosenDiff < diffThreshold * 0.75) continue;
+          const tooClose = [...chosen].some(index => {
+            const other = points[index];
+            return Math.abs(other.x - point.x) < minLabelDx && Math.abs(other.y - point.y) < minLabelDy;
+          });
+          if (!tooClose) {
+            chosen.add(candidate.i);
+          }
+        }
+        return chosen;
+      };
+      const labelIndices = selectTrendLabelIndices(pointData);
       const zeroY = padY + (1 - ((0 - minV) / span)) * innerH;
       const zeroVisible = zeroY >= padY && zeroY <= (height - padY);
       const endValue = cumulative[cumulative.length - 1];
-      const stroke = endValue >= 0 ? "var(--green)" : "var(--red)";
+      const segmentsSvg = pointData.slice(1).map((curr, i) => {
+        const prev = pointData[i];
+        const v1 = prev.value;
+        const v2 = curr.value;
+        const sameSide = (v1 > 0 && v2 > 0) || (v1 < 0 && v2 < 0) || (v1 === 0 && v2 === 0);
+        if (sameSide) {
+          return `<line x1="${prev.x.toFixed(2)}" y1="${prev.y.toFixed(2)}" x2="${curr.x.toFixed(2)}" y2="${curr.y.toFixed(2)}" stroke="${trendColor(v1)}" stroke-width="2.2" stroke-linecap="round"></line>`;
+        }
+        if (v1 === 0 || v2 === 0) {
+          const zeroPoint = v1 === 0 ? prev : curr;
+          const otherPoint = v1 === 0 ? curr : prev;
+          return [
+            `<line x1="${zeroPoint.x.toFixed(2)}" y1="${zeroPoint.y.toFixed(2)}" x2="${otherPoint.x.toFixed(2)}" y2="${otherPoint.y.toFixed(2)}" stroke="${trendColor(otherPoint.value)}" stroke-width="2.2" stroke-linecap="round"></line>`,
+            `<circle class="trend-point" cx="${zeroPoint.x.toFixed(2)}" cy="${zeroPoint.y.toFixed(2)}" r="2.6" stroke="var(--orange)"></circle>`
+          ].join("");
+        }
+        const ratio = (0 - v1) / (v2 - v1);
+        const crossX = prev.x + (curr.x - prev.x) * ratio;
+        const crossY = prev.y + (curr.y - prev.y) * ratio;
+        return [
+          `<line x1="${prev.x.toFixed(2)}" y1="${prev.y.toFixed(2)}" x2="${crossX.toFixed(2)}" y2="${crossY.toFixed(2)}" stroke="${trendColor(v1)}" stroke-width="2.2" stroke-linecap="round"></line>`,
+          `<line x1="${crossX.toFixed(2)}" y1="${crossY.toFixed(2)}" x2="${curr.x.toFixed(2)}" y2="${curr.y.toFixed(2)}" stroke="${trendColor(v2)}" stroke-width="2.2" stroke-linecap="round"></line>`,
+          `<circle class="trend-point" cx="${crossX.toFixed(2)}" cy="${crossY.toFixed(2)}" r="2.6" stroke="var(--orange)"></circle>`
+        ].join("");
+      }).join("");
+      const pointsSvg = pointData.map(({ value, x, y }) => (
+        `<circle class="trend-point" cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="2.6" stroke="${trendColor(value)}"></circle>`
+      )).join("");
+      const labelsSvg = pointData.map(({ value, x, y }, i) => {
+        if (!labelIndices.has(i)) return "";
+        const labelY = y <= padY + 12 ? y + 11 : y - 6;
+        const baseline = y <= padY + 12 ? "hanging" : "auto";
+        const labelText = value > 0 ? `+${value}` : `${value}`;
+        const isFirst = i === 0;
+        const isLast = i === pointData.length - 1;
+        const labelX = x;
+        const textAnchor = isFirst ? "start" : (isLast ? "end" : "middle");
+        return `<text class="trend-label" x="${labelX.toFixed(2)}" y="${labelY.toFixed(2)}" text-anchor="${textAnchor}" dominant-baseline="${baseline}" fill="${trendColor(value)}">${labelText}</text>`;
+      }).join("");
       return {
         svg: `
-          <svg class="trend-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+          <svg class="trend-svg" viewBox="0 0 ${width} ${height}">
             ${zeroVisible ? `<line x1="${padX}" y1="${zeroY.toFixed(2)}" x2="${width - padX}" y2="${zeroY.toFixed(2)}" stroke="#6272a4" stroke-width="1" stroke-dasharray="4 3"></line>` : ""}
-            <polyline points="${points}" fill="none" stroke="${stroke}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"></polyline>
+            ${segmentsSvg}
+            ${pointsSvg}
+            ${labelsSvg}
+            <line class="trend-hover-line" x1="${padX}" y1="0" x2="${padX}" y2="${height}"></line>
           </svg>
         `,
+        cumulative,
+        width,
+        height,
+        padX,
         start: 0,
         end: endValue
       };
@@ -1257,6 +1391,54 @@
       statTooltipEl.style.display = "none";
     }
 
+    function showTrendTooltip(e) {
+      const panel = e.currentTarget;
+      const values = String(panel.dataset.mmrValues || "")
+        .split(",")
+        .filter(Boolean)
+        .map(v => Number(v));
+      if (!values.length) return;
+      const svg = panel.querySelector(".trend-svg");
+      if (!svg) return;
+      const padX = Number(panel.dataset.padX || 0);
+      const viewWidth = Number(panel.dataset.viewWidth || 0);
+      const viewHeight = Number(panel.dataset.viewHeight || 96);
+      const rect = svg.getBoundingClientRect();
+      const innerWidth = Math.max(1, viewWidth - padX * 2);
+      const mouseX = Math.min(Math.max(0, e.clientX - rect.left), rect.width);
+      const xInViewBox = rect.width > 0 ? (mouseX / rect.width) * viewWidth : 0;
+      const clampedX = Math.min(Math.max(padX, xInViewBox), viewWidth - padX);
+      const ratio = innerWidth > 0 ? (clampedX - padX) / innerWidth : 0;
+      const rawIndex = ratio * Math.max(0, values.length - 1);
+      const leftIndex = Math.max(0, Math.min(values.length - 1, Math.floor(rawIndex)));
+      const rightIndex = Math.max(0, Math.min(values.length - 1, Math.ceil(rawIndex)));
+      const segmentRatio = rightIndex === leftIndex ? 0 : (rawIndex - leftIndex) / (rightIndex - leftIndex);
+      const hoveredValue = rightIndex === leftIndex
+        ? values[leftIndex]
+        : values[leftIndex] + (values[rightIndex] - values[leftIndex]) * segmentRatio;
+      const hoverLine = svg.querySelector(".trend-hover-line");
+      if (hoverLine) {
+        hoverLine.setAttribute("x1", clampedX.toFixed(2));
+        hoverLine.setAttribute("x2", clampedX.toFixed(2));
+        hoverLine.setAttribute("y1", "0");
+        hoverLine.setAttribute("y2", String(viewHeight));
+        hoverLine.style.display = "block";
+      }
+      statTooltipEl?.classList.remove("score-good", "score-bad", "score-mid");
+      statTooltipEl?.classList.add(scoreClass(String(Math.round(hoveredValue))));
+      showStatTooltip(`${formatSignedInteger(Math.round(hoveredValue))} MMR`, e);
+    }
+
+    function hideTrendTooltip(e) {
+      const panel = e.currentTarget;
+      const hoverLine = panel.querySelector(".trend-hover-line");
+      if (hoverLine) {
+        hoverLine.style.display = "none";
+      }
+      statTooltipEl?.classList.remove("score-good", "score-bad", "score-mid");
+      hideStatTooltip();
+    }
+
     function formatSignedDelta(value) {
       const v = Number(value || 0);
       if (Math.abs(v) < 0.005) return "0.00";
@@ -1314,7 +1496,8 @@
 
       const rows = sortScoreRows(buildScoreRows(state.games));
       const totals = buildTotals(state.games);
-      const trend = buildMmrTrendSvg(state.games);
+      const trendWidth = Math.max(320, Math.round((content.clientWidth || mainEl?.clientWidth || 560) - 4));
+      const trend = buildMmrTrendSvg(state.games, trendWidth);
       const handStatsCacheKey = `${state.selectedUserId}:${state.games.length}:${state.games[0]?.id || 0}`;
       if (!state.handStatsLoading && state.games.length > 0 && state.handStatsCacheKey !== handStatsCacheKey) {
         loadHandStatsIfNeeded().catch(() => {});
@@ -1422,7 +1605,7 @@
             `}
           </div>
           ` : ""}
-          <div class="trend-panel" data-tip="MMR trend.">
+          <div class="trend-panel" data-mmr-values="${trend.cumulative.join(",")}" data-view-width="${trend.width}" data-view-height="${trend.height}" data-pad-x="${trend.padX}">
             ${trend.svg}
           </div>
           <div class="games-table-wrap ${state.selectedGameId !== null ? "limited" : ""}">
@@ -1512,9 +1695,15 @@
       if (mainEl) mainEl.scrollTop = prevMainScrollTop;
       syncSelectedGameIntoView(content);
       content.querySelectorAll("[data-tip]").forEach(el => {
+        if (el.classList.contains("trend-panel")) return;
         el.addEventListener("mouseenter", e => showStatTooltip(el.dataset.tip || "", e));
         el.addEventListener("mousemove", moveStatTooltip);
         el.addEventListener("mouseleave", hideStatTooltip);
+      });
+      content.querySelectorAll(".trend-panel").forEach(el => {
+        el.addEventListener("mouseenter", showTrendTooltip);
+        el.addEventListener("mousemove", showTrendTooltip);
+        el.addEventListener("mouseleave", hideTrendTooltip);
       });
       content.querySelectorAll("[data-action='filter-akq']").forEach(el => {
         el.addEventListener("click", () => {
@@ -1777,6 +1966,7 @@
       try {
         const appTitle = document.getElementById("app-title");
         const scrollTopButton = document.getElementById("scroll-top-button");
+        let resizeFrame = 0;
         const updateScrollTopButton = () => {
           const mainEl = document.querySelector(".main");
           const scrollTop = Math.max(
@@ -1815,6 +2005,14 @@
           mainEl.addEventListener("scroll", updateScrollTopButton);
         }
         window.addEventListener("scroll", updateScrollTopButton);
+        window.addEventListener("resize", () => {
+          if (resizeFrame) cancelAnimationFrame(resizeFrame);
+          resizeFrame = requestAnimationFrame(() => {
+            resizeFrame = 0;
+            render();
+            updateScrollTopButton();
+          });
+        });
         loadViewState();
         const urlSelection = applySelectedUserIdFromUrl();
         await loadUsers();
