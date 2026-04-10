@@ -780,6 +780,7 @@ struct Context {
     bool isGameFreezed{};
     double tick = 0.0;
     bool isGameStarted{};
+    bool isGameOver{};
     bool isDealFinished{};
 
     auto clear() -> void
@@ -806,6 +807,7 @@ struct Context {
         movingCards.clear();
         isGameFreezed = false;
         isDealFinished = false;
+        isGameOver = false;
         offerButton.clear();
         offerPopUp.isVisible = false;
         offerPopUp.requesterId.clear();
@@ -1977,8 +1979,8 @@ auto handleDealFinished(const Message& msg) -> void
     if (not dealFinished) { return; }
     ctx().isDealFinished = true;
     ctx().offerButton.beenClicked = false;
-    const auto isGameOver = dealFinished->is_game_over();
-    PREF_DI(isGameOver);
+    ctx().isGameOver = dealFinished->is_game_over();
+    PREF_DI(ctx().isGameOver);
     ctx().scoreSheet.score = dealFinished->score_sheet() // clang-format off
         | rv::transform(unpair([](const auto& playerId, const auto& score) {
         return std::pair{playerId, Score{
@@ -2007,7 +2009,7 @@ auto handleDealFinished(const Message& msg) -> void
         ctx().isGameStarted = false;
         if (ctx().areAllPlayersJoined()) { ctx().startGameButton.isVisible = true; }
     };
-    if (isGameOver) {
+    if (ctx().isGameOver) {
         if (ctx().areAllPlayersJoined()) {
             waitFor(10s, overGame);
         } else {
@@ -3891,7 +3893,7 @@ auto drawWhistingOrMiserMenu() -> void
     }
     static const auto& font = ctx().fontL;
     static const auto fontSize = ctx().fontSizeL();
-    static const auto playerNameFontSize = fontSize * 0.6f;
+    static const auto playerNameOrGameOverFontSize = fontSize * 0.6f;
     static const auto pos = r::Vector2{VirtualW * 0.5f, BorderMargin + fontSize * 0.5f};
     const auto bids = players() | rv::transform(&Player::bid);
     const auto ranks = bids
@@ -3908,12 +3910,12 @@ auto drawWhistingOrMiserMenu() -> void
         ? ctx().localizeText(GameText::Passing) + prettifyNumber(ctx().bidding.passRound)
         : std::string{ctx().localizeBid(bid)};
     const auto drawBidHeaderWithPlayerName = [&](const std::string& prefix) {
-        const auto prefixSize = font.MeasureText(prefix, playerNameFontSize, FontSpacing);
+        const auto prefixSize = font.MeasureText(prefix, playerNameOrGameOverFontSize, FontSpacing);
         const auto bidSize = font.MeasureText(bidText, fontSize, FontSpacing);
         const auto startX = pos.x - (prefixSize.x + bidSize.x) * 0.5f;
         const auto prefixPos = r::Vector2{startX, pos.y - prefixSize.y * 0.5f};
         const auto bidPos = r::Vector2{startX + prefixSize.x, pos.y - bidSize.y * 0.5f};
-        font.DrawText(prefix, prefixPos, playerNameFontSize, FontSpacing, getGuiColor(TEXT_COLOR_NORMAL));
+        font.DrawText(prefix, prefixPos, playerNameOrGameOverFontSize, FontSpacing, getGuiColor(TEXT_COLOR_NORMAL));
         if (isRedSuit(bidText)) {
             drawRankAndSuitText(bidText, font, fontSize, bidPos, getGuiColor(TEXT_COLOR_NORMAL), redColor());
         } else {
@@ -3921,7 +3923,14 @@ auto drawWhistingOrMiserMenu() -> void
         }
     };
     if (ctx().miserCardsPanel.isVisible) { return; }
-    if (not std::empty(playerName) and not isPassGame) {
+    if (ctx().isGameOver) {
+        const auto gameOverText = ctx().localizeText(GameText::GameOver);
+        withGuiFont(font, [&] {
+            withGuiStyle(DEFAULT, TEXT_SIZE, static_cast<int>(playerNameOrGameOverFontSize), [&] {
+                drawGuiLabelCentered(gameOverText, pos);
+            });
+        });
+    } else if (not std::empty(playerName) and not isPassGame) {
         drawBidHeaderWithPlayerName(fmt::format("{} ", playerName));
     } else {
         withGuiFont(font, [&] {
