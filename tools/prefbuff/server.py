@@ -21,6 +21,7 @@ EXCLUDED_PLAYER_IDS = {
     "e0c7ad08-dba9-40f5-a226-b1f3e301c4ca",
     "0bf3a0c0-06c9-48a5-af23-731d2fd82f78",
     "5d6c8439-a8d4-4cef-94c2-79938f16124e",
+    "4a5303ba-c6e7-4b86-bec2-ad9109e5c40c",
 }
 
 
