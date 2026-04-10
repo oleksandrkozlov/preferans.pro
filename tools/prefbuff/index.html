@@ -1313,6 +1313,26 @@
       return isPassDecision(match?.decisionText || match?.decision || "");
     }
 
+    function averageCardPoints(cards) {
+      const list = Array.isArray(cards) ? cards : [];
+      if (list.length === 0) return 0;
+      const hcpByRank = { A: 4, K: 3, Q: 2, J: 1 };
+      let total = 0;
+      for (const card of list) {
+        total += Number(hcpByRank[normalizeCard(card).rank] || 0);
+      }
+      return total / list.length;
+    }
+
+    function averageVisibleCardsPointsForMatch(match) {
+      const cards = Array.isArray(match?.cards) ? match.cards : [];
+      if (shouldShowSeparateTalonForMatch(match)) {
+        return averageCardPoints(cards);
+      }
+      const talon = Array.isArray(match?.talon) ? match.talon : [];
+      return averageCardPoints([...cards, ...talon]);
+    }
+
     function buildScoreRows(games) {
       const asc = [...games].sort((a, b) => a.id - b.id);
       let run = 0;
@@ -1401,6 +1421,8 @@
         return a.whists - b.whists;
       }
       if (key === "mmr") return a.mmr - b.mmr;
+      if (key === "talon") return averageCardPoints(a.talon) - averageCardPoints(b.talon);
+      if (key === "cards") return averageVisibleCardsPointsForMatch(a) - averageVisibleCardsPointsForMatch(b);
       return 0;
     }
 
@@ -1859,8 +1881,8 @@
                       <th class="sortable ${state.filteredDealsSortKey === "tricks" ? "active" : ""}" data-filtered-sort-key="tricks">TRICKS${sortIndicator("tricks", state.filteredDealsSortKey, state.filteredDealsSortDir)}</th>
                       <th class="sortable ${state.filteredDealsSortKey === "dpw" ? "active" : ""}" data-filtered-sort-key="dpw">D/P/W${sortIndicator("dpw", state.filteredDealsSortKey, state.filteredDealsSortDir)}</th>
                       <th class="sortable ${state.filteredDealsSortKey === "mmr" ? "active" : ""}" data-filtered-sort-key="mmr">MMR${sortIndicator("mmr", state.filteredDealsSortKey, state.filteredDealsSortDir)}</th>
-                      <th>TALON</th>
-                      <th>CARDS</th>
+                      <th class="sortable ${state.filteredDealsSortKey === "talon" ? "active" : ""}" data-filtered-sort-key="talon">TALON${sortIndicator("talon", state.filteredDealsSortKey, state.filteredDealsSortDir)}</th>
+                      <th class="sortable ${state.filteredDealsSortKey === "cards" ? "active" : ""}" data-filtered-sort-key="cards">CARDS${sortIndicator("cards", state.filteredDealsSortKey, state.filteredDealsSortDir)}</th>
                     </tr>
                   </thead>
                   <tbody>
