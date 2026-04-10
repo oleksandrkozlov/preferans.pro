@@ -50,6 +50,12 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    location = /prefbuff/favicon.ico {
+        alias /home/olkozlo/Work/workspace/preferans/tools/prefbuff/cards/favicon.ico;
+        log_not_found off;
+        access_log off;
+    }
+
     location /assets/cards/ {
         proxy_pass http://127.0.0.1:8081;
         proxy_http_version 1.1;

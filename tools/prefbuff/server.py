@@ -196,6 +196,13 @@ def make_handler(store: DataStore):
                 self.end_headers()
                 self.wfile.write(body)
                 return
+            if path == "/favicon.ico" or path == "/prefbuff/favicon.ico":
+                icon_path = cards_dir / "favicon.ico"
+                if icon_path.exists() and icon_path.is_file():
+                    _binary_response(self, icon_path.read_bytes(), "image/x-icon")
+                else:
+                    _text_response(self, "Not found", status=404)
+                return
             if path.startswith("/assets/cards/"):
                 filename = Path(path).name
                 card_path = cards_dir / filename
