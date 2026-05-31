@@ -4151,7 +4151,25 @@ auto drawAgreements(const float reservedTop) -> void
     });
 }
 
-// TODO: support text input for mobile devices
+auto drawEyeIcons(const bool isEye) -> void
+{
+    static constexpr auto Border = 2;
+    static const auto rec = r::Rectangle{
+        1456 + Border * 0.5f,
+        687 + Border * 0.5f,
+        RAYGUI_TEXTINPUTBOX_HEIGHT - Border,
+        RAYGUI_TEXTINPUTBOX_HEIGHT - Border};
+    const auto state = r::Mouse::GetPosition().CheckCollision(rec)
+        ? (r::Mouse::IsButtonDown(MOUSE_LEFT_BUTTON) ? STATE_PRESSED : STATE_FOCUSED)
+        : GuiState{STATE_NORMAL};
+    rec.Draw(getGuiColor(BUTTON, BASE + state * 3));
+    static const auto fSize = fontSize(ctx().fontAwesomeXL) * 0.15f;
+    const auto icon = isEye ? EyeIcon : EyeSlashIcon;
+    const auto bounds = ctx().fontAwesomeXL.MeasureText(icon, fSize, FontSpacing);
+    const auto pos = r::Vector2{rec.x + (rec.width - bounds.x) * 0.5f, rec.y + (rec.height - bounds.y) * 0.5f};
+    ctx().fontAwesomeXL.DrawText(icon, pos, fSize, FontSpacing, getGuiColor(BUTTON, TEXT + state * 3));
+}
+
 auto drawLoginScreen() -> void
 {
     if (ctx().isLoggedIn or ctx().isLoginInProgress) { return; }
@@ -4333,13 +4351,15 @@ auto drawLoginScreen() -> void
             &passwordViewActive);
     });
 
+    drawEyeIcons(passwordViewActive);
+
     if (withGuiFont(ctx().fontS, [&] {
             return GuiTextBox(loginInputBox, std::data(loginBuffer), maxLengthName, loginEditMode);
         })) {
         loginEditMode = not loginEditMode;
     }
 
-    // hide x button
+    // hide x (close) button
     r::Rectangle{
         textInputBox.x + textInputBoxWidth - RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT - 2,
         textInputBox.y + 2,
@@ -5824,7 +5844,7 @@ auto handleCardClick(
 
 [[nodiscard]] auto makeAwesomeLargeCodepoints()
 {
-    return std::array{LeftArrowIcon, RightArrowIcon, DownArrowIcon};
+    return std::array{LeftArrowIcon, RightArrowIcon, DownArrowIcon, EyeIconHex, EyeSlashIconHex};
 }
 
 auto loadFonts() -> void
