@@ -38,6 +38,45 @@
       grid-template-columns: 131px 1fr;
       min-height: 100vh;
     }
+    .app.sidebar-hidden {
+      grid-template-columns: 1fr;
+    }
+    .app.sidebar-hidden > .sidebar {
+      display: none;
+    }
+    .user-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 32px;
+      margin-bottom: 8px;
+    }
+    .user-header h2 {
+      display: flex;
+      align-items: center;
+      margin: 0;
+      min-height: 32px;
+      line-height: 1.1;
+      position: relative;
+      top: 4px;
+    }
+    .sidebar-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: none;
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      border: 1px solid var(--table-border);
+      background: var(--table-bg-alt);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 1;
+      padding: 0;
+    }
+    .sidebar-toggle:hover { border-color: var(--accent); }
     .sidebar {
       border-right: 1px solid var(--line);
       background: rgba(40, 42, 54, 0.8);
@@ -74,9 +113,10 @@
     .section h2.clearable {
       cursor: pointer;
     }
-    .summary-cards {
+    .summary-cards,
+    .hand-stats-grid {
       display: grid;
-      grid-template-columns: repeat(9, minmax(0, 1fr));
+      grid-template-columns: repeat(10, minmax(0, 1fr));
       gap: 8px;
       margin-bottom: 8px;
     }
@@ -176,11 +216,6 @@
       background: transparent;
       padding: 0;
       margin-bottom: 10px;
-    }
-    .hand-stats-grid {
-      display: grid;
-      grid-template-columns: repeat(9, minmax(0, 1fr));
-      gap: 8px;
     }
     .hand-stat-card {
       border: 1px solid var(--table-border);
@@ -520,20 +555,17 @@
       .app { grid-template-columns: 1fr; }
       .sidebar { border-right: none; border-bottom: 1px solid var(--line); max-height: 36vh; }
       .summary-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      .hand-stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }
     @media (max-width: 640px) {
       .summary-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .hand-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 460px) {
       .summary-cards { grid-template-columns: 1fr; }
-      .hand-stats-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
-  <div class="app">
+  <div id="app" class="app">
     <aside class="sidebar">
       <h1 id="app-title" title="Clear selection">PREFBUFF</h1>
       <div id="users"></div>
@@ -564,7 +596,7 @@
       handStatsCacheKey: "",
       handStatsLoading: false,
       handStatsError: "",
-      handMatches: { hands: [], akq: [], akqj: [], aces3: [], miser: [], declarer: [], pass: [], passing: [], whist: [] },
+      handMatches: { hands: [], akq: [], akqj: [], aces3: [], miser: [], declarer: [], pass: [], passing: [], passingZero: [], whist: [] },
       activeHandFilter: "",
       pendingGameScrollId: null
     };
@@ -923,7 +955,7 @@
       state.handStatsCacheKey = "";
       state.handStatsLoading = false;
       state.handStatsError = "";
-      state.handMatches = { hands: [], akq: [], akqj: [], aces3: [], miser: [], declarer: [], pass: [], passing: [], whist: [] };
+      state.handMatches = { hands: [], akq: [], akqj: [], aces3: [], miser: [], declarer: [], pass: [], passing: [], passingZero: [], whist: [] };
     }
 
     function hasSuitedRanksInHand(cards, requiredRanks) {
@@ -1074,6 +1106,18 @@
       let passingMadeCount = 0;
       let whistLikeCount = 0;
       let whistMadeCount = 0;
+      const declaredByLevel = { 6: 0, 7: 0, 8: 0, 9: 0, 10: 0 };
+      let passingZeroTricksCount = 0;
+
+      const contractLevelDigit = (contract) => {
+        const text = String(contract ?? "").trim();
+        if (text.startsWith("10")) return 10;
+        if (text.startsWith("9")) return 9;
+        if (text.startsWith("8")) return 8;
+        if (text.startsWith("7")) return 7;
+        if (text.startsWith("6")) return 6;
+        return 0;
+      };
 
       const hcpByRank = { A: 4, K: 3, Q: 2, J: 1 };
       const cardPointsByRank = { A: 8, K: 7, Q: 6, J: 5, "10": 4, "9": 3, "8": 2, "7": 1 };
@@ -1099,6 +1143,8 @@
               talonHcp += Number(hcpByRank[rank] || 0);
             }
             declarerTalonHcpTotal += talonHcp;
+            const level = contractLevelDigit(deal?.contract);
+            if (level >= 6 && level <= 10) declaredByLevel[level] += 1;
           }
           const rawDecision = deal?.decisions?.[playerId] ?? (deal?.declarer_id === playerId ? deal?.contract : "");
           const decisionText = String(rawDecision ?? "").trim();
@@ -1117,6 +1163,7 @@
           if (allPlayersPassed(deal)) {
             passingCount += 1;
             if (dealMmr > 0) passingMadeCount += 1;
+            if (Number(deal?.tricks?.[playerId] || 0) === 0) passingZeroTricksCount += 1;
           }
 
           const bySuit = { "♠": [], "♦": [], "♣": [], "♥": [] };
@@ -1174,6 +1221,13 @@
         passingMadePct: percentText(passingMadeCount, passingCount),
         whistRatePct: percentText(whistLikeCount, decisionSamples),
         whistMadePct: percentText(whistMadeCount, whistLikeCount),
+        declared6Count: declaredByLevel[6],
+        declared7Count: declaredByLevel[7],
+        declared8Count: declaredByLevel[8],
+        declared9Count: declaredByLevel[9],
+        declared10Count: declaredByLevel[10],
+        passingZeroTricksCount,
+        passingZeroTricksPct: percentText(passingZeroTricksCount, passingCount),
       };
     }
 
@@ -1214,6 +1268,9 @@
           }),
           passing: collectMatchesForPlayer(state.selectedUserId, valid, (_cards, deal) => {
             return allPlayersPassed(deal);
+          }),
+          passingZero: collectMatchesForPlayer(state.selectedUserId, valid, (_cards, deal, playerId) => {
+            return allPlayersPassed(deal) && Number(deal?.tricks?.[playerId] || 0) === 0;
           }),
           whist: collectMatchesForPlayer(state.selectedUserId, valid, (_cards, deal, playerId) => {
             const rawDecision = deal?.decisions?.[playerId] ?? (deal?.declarer_id === playerId ? deal?.contract : "");
@@ -1502,15 +1559,58 @@
         const y = padY + (1 - ((v - minV) / span)) * innerH;
         return { value: v, x, y };
       });
+      const maxVisibleLabels = Math.max(2, Math.min(8, Math.floor(innerW / 78) || 2));
+      const densePointStep = cumulative.length <= 48
+        ? 1
+        : Math.max(2, Math.ceil(cumulative.length / Math.max(18, Math.floor(innerW / 24))));
+      const pointRadius = cumulative.length > 240 ? 1.1 : (cumulative.length > 120 ? 1.5 : (cumulative.length > 60 ? 1.9 : 2.6));
       const selectTrendLabelIndices = (points) => {
         if (points.length <= 2) return new Set(points.map((_, i) => i));
         const chosen = new Set([0, points.length - 1]);
-        const targetLabelCount = Math.min(12, Math.max(5, Math.ceil(points.length / 4)));
-        const diffThreshold = Math.max(6, span / Math.max(3, targetLabelCount - 1));
-        const minLabelDx = Math.max(16, innerW / Math.max(4, targetLabelCount - 1) * 0.6);
-        const minLabelDy = 11;
+        const targetLabelCount = Math.min(points.length, maxVisibleLabels);
+        const diffThreshold = Math.max(8, span / Math.max(2, targetLabelCount - 1));
+        const minLabelDx = Math.max(56, innerW / Math.max(1, targetLabelCount - 1) * 0.9);
+        const minLabelDy = 14;
+        const hasRoomForLabel = (candidateIndex) => {
+          const point = points[candidateIndex];
+          const estimatedWidth = Math.max(34, String(point.value).length * 7);
+          return ![...chosen].some(index => {
+            const other = points[index];
+            const otherWidth = Math.max(34, String(other.value).length * 7);
+            return Math.abs(other.x - point.x) < ((estimatedWidth + otherWidth) / 2 + 8)
+              && Math.abs(other.y - point.y) < minLabelDy;
+          });
+        };
+        const addSpacedLabels = () => {
+          if (targetLabelCount <= 2) return;
+          const slots = targetLabelCount - 1;
+          for (let slot = 1; slot < slots; slot += 1) {
+            const targetIndex = Math.round((slot / slots) * (points.length - 1));
+            if (targetIndex <= 0 || targetIndex >= points.length - 1) continue;
+            if (chosen.has(targetIndex)) continue;
+            if (hasRoomForLabel(targetIndex)) {
+              chosen.add(targetIndex);
+              continue;
+            }
+            const searchRadius = Math.max(2, Math.ceil(points.length / Math.max(12, targetLabelCount * 3)));
+            for (let offset = 1; offset <= searchRadius; offset += 1) {
+              const left = targetIndex - offset;
+              const right = targetIndex + offset;
+              if (left > 0 && !chosen.has(left) && hasRoomForLabel(left)) {
+                chosen.add(left);
+                break;
+              }
+              if (right < points.length - 1 && !chosen.has(right) && hasRoomForLabel(right)) {
+                chosen.add(right);
+                break;
+              }
+            }
+          }
+        };
+        addSpacedLabels();
         let lastLabeledIndex = 0;
         for (let i = 1; i < points.length - 1; i += 1) {
+          if (chosen.size >= targetLabelCount) break;
           const prev = points[i - 1].value;
           const curr = points[i].value;
           const next = points[i + 1].value;
@@ -1519,7 +1619,7 @@
           const touchesZero = curr === 0 || (prev < 0 && curr > 0) || (prev > 0 && curr < 0);
           const mmrMovedEnough = Math.abs(curr - points[lastLabeledIndex].value) >= diffThreshold;
           const hasHorizontalRoom = (points[i].x - points[lastLabeledIndex].x) >= minLabelDx;
-          if (isPeak || isValley || touchesZero || (mmrMovedEnough && hasHorizontalRoom)) {
+          if ((isPeak || isValley || touchesZero || (mmrMovedEnough && hasHorizontalRoom)) && hasRoomForLabel(i)) {
             chosen.add(i);
             lastLabeledIndex = i;
           }
@@ -1541,17 +1641,29 @@
           const point = points[candidate.i];
           const nearestChosenDiff = Math.min(...[...chosen].map(index => Math.abs(points[index].value - point.value)));
           if (nearestChosenDiff < diffThreshold * 0.75) continue;
-          const tooClose = [...chosen].some(index => {
-            const other = points[index];
-            return Math.abs(other.x - point.x) < minLabelDx && Math.abs(other.y - point.y) < minLabelDy;
-          });
-          if (!tooClose) {
+          if (hasRoomForLabel(candidate.i)) {
             chosen.add(candidate.i);
           }
         }
         return chosen;
       };
       const labelIndices = selectTrendLabelIndices(pointData);
+      const pointIndices = new Set(labelIndices);
+      if (pointData.length > 1) {
+        for (let i = 0; i < pointData.length; i += densePointStep) {
+          pointIndices.add(i);
+        }
+      }
+      if (pointData.length > 2) {
+        let minIndex = 0;
+        let maxIndex = 0;
+        for (let i = 1; i < pointData.length; i += 1) {
+          if (pointData[i].value < pointData[minIndex].value) minIndex = i;
+          if (pointData[i].value > pointData[maxIndex].value) maxIndex = i;
+        }
+        pointIndices.add(minIndex);
+        pointIndices.add(maxIndex);
+      }
       const zeroY = padY + (1 - ((0 - minV) / span)) * innerH;
       const zeroVisible = zeroY >= padY && zeroY <= (height - padY);
       const endValue = cumulative[cumulative.length - 1];
@@ -1577,12 +1689,13 @@
         return [
           `<line x1="${prev.x.toFixed(2)}" y1="${prev.y.toFixed(2)}" x2="${crossX.toFixed(2)}" y2="${crossY.toFixed(2)}" stroke="${trendColor(v1)}" stroke-width="2.2" stroke-linecap="round"></line>`,
           `<line x1="${crossX.toFixed(2)}" y1="${crossY.toFixed(2)}" x2="${curr.x.toFixed(2)}" y2="${curr.y.toFixed(2)}" stroke="${trendColor(v2)}" stroke-width="2.2" stroke-linecap="round"></line>`,
-          `<circle class="trend-point" cx="${crossX.toFixed(2)}" cy="${crossY.toFixed(2)}" r="2.6" stroke="var(--orange)"></circle>`
+          `<circle class="trend-point" cx="${crossX.toFixed(2)}" cy="${crossY.toFixed(2)}" r="${pointRadius.toFixed(2)}" stroke="var(--orange)"></circle>`
         ].join("");
       }).join("");
-      const pointsSvg = pointData.map(({ value, x, y }) => (
-        `<circle class="trend-point" cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="2.6" stroke="${trendColor(value)}"></circle>`
-      )).join("");
+      const pointsSvg = pointData.map(({ value, x, y }, i) => {
+        if (!pointIndices.has(i)) return "";
+        return `<circle class="trend-point" cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${pointRadius.toFixed(2)}" stroke="${trendColor(value)}"></circle>`;
+      }).join("");
       const labelsSvg = pointData.map(({ value, x, y }, i) => {
         if (!labelIndices.has(i)) return "";
         const labelY = y <= padY + 12 ? y + 11 : y - 6;
@@ -1748,7 +1861,7 @@
     function formatDealSplit(matches, filterKey) {
       const list = Array.isArray(matches) ? matches : [];
       const total = list.length;
-      if (!["hands", "akq", "akqj", "aces3", "declarer", "pass", "passing", "whist", "miser"].includes(filterKey)) return `${total}`;
+      if (!["hands", "akq", "akqj", "aces3", "declarer", "pass", "passing", "passingZero", "whist", "miser"].includes(filterKey)) return `${total}`;
       let positive = 0;
       let negative = 0;
       let totalMmr = 0;
@@ -1795,7 +1908,7 @@
 
       const gamesTable = `
         <div class="games-block">
-          <h2 class="clearable" data-action="clear-main-selection" title="Clear selected game and stat filters">${esc(user.player_name)}</h2>
+          <div class="user-header"><button id="sidebar-toggle-inline" class="sidebar-toggle" type="button" aria-label="Toggle sidebar" title="Toggle sidebar">☰</button><h2 class="clearable" data-action="clear-main-selection" title="Clear selected game and stat filters">${esc(user.player_name)}</h2></div>
           <div class="summary-cards">
             <div class="summary-card" data-tip="Total number of games.">
               <div class="summary-label">Games</div>
@@ -1816,6 +1929,10 @@
             <div class="summary-card ${state.activeHandFilter === "passing" ? "is-active" : ""}" data-action="filter-passing" data-tip="Percentage of deals where all players passed.&#10;↑ - percentage of those deals with positive MMR.">
               <div class="summary-label">All Pass</div>
               <div class="summary-value">${state.handStatsLoading ? "..." : (state.handStats ? state.handStats.passingRatePct : "-")}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats?.passingMadePct || "")}">${state.handStats ? state.handStats.passingMadePct : "-"}</span></span></div>
+            </div>
+            <div class="summary-card ${state.activeHandFilter === "passingZero" ? "is-active" : ""}" data-action="filter-passing-zero" data-tip="Percentage of All Pass deals where this player took 0 tricks.">
+              <div class="summary-label">All Pass (0 Tricks)</div>
+              <div class="summary-value">${state.handStatsLoading ? "..." : (state.handStats ? state.handStats.passingZeroTricksPct : "-")}</div>
             </div>
             <div class="summary-card ${state.activeHandFilter === "miser" ? "is-active" : ""}" data-action="filter-miser" data-tip="Number of deals played as misère.&#10;↑ - percentage of those deals with positive MMR.">
               <div class="summary-label">Misère</div>
@@ -1844,6 +1961,7 @@
                   : `
                     <div class="hand-stats-grid">
                       <div class="hand-stat-card ${state.activeHandFilter === "declarer" ? "is-active" : ""}" data-action="filter-declarer" data-tip="Percentage of deals played as declarer.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Declarer</div><div class="hand-stat-value">${state.handStats.declarerPct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.declarerMadePct)}">${state.handStats.declarerMadePct}</span></span></div></div>
+                      <div class="hand-stat-card" data-tip="Number of deals declared as a 6/7/8/9/10 game."><div class="hand-stat-label">Declared 6/7/8/9/10</div><div class="hand-stat-value">${state.handStats.declared6Count}/${state.handStats.declared7Count}/${state.handStats.declared8Count}/${state.handStats.declared9Count}/${state.handStats.declared10Count}</div></div>
                       <div class="hand-stat-card ${state.activeHandFilter === "pass" ? "is-active" : ""}" data-action="filter-pass" data-tip="Percentage of deals passed.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Pass</div><div class="hand-stat-value">${state.handStats.passRatePct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.passMadePct)}">${state.handStats.passMadePct}</span></span></div></div>
                       <div class="hand-stat-card ${state.activeHandFilter === "whist" ? "is-active" : ""}" data-action="filter-whist" data-tip="Percentage of deals played as whist/half-whist.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Whist</div><div class="hand-stat-value">${state.handStats.whistRatePct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.whistMadePct)}">${state.handStats.whistMadePct}</span></span></div></div>
                       <div class="hand-stat-card ${state.activeHandFilter === "akq" ? "is-active" : ""}" data-action="filter-akq" data-tip="Percentage of hands with at least one suited AKQ combination (e.g., A♠ K♠ Q♠).&#10;In a uniformly random deal, the expected value is 9.54%."><div class="hand-stat-label">AKQ Suited</div><div class="hand-stat-value">${state.handStats.suitedAKQPct}<span class="hand-stat-delta ${scoreClass(formatSignedPpDelta(state.handStats.suitedAKQRate - 9.5385))}">${formatSignedPpDelta(state.handStats.suitedAKQRate - 9.5385)}</span></div></div>
@@ -1857,7 +1975,7 @@
           </div>
           ${state.activeHandFilter ? `
           <div class="section">
-            <h2>${state.activeHandFilter === "hands" ? "Deals" : (state.activeHandFilter === "akq" ? "AKQ Suited Deals" : (state.activeHandFilter === "akqj" ? "AKQJ Suited Deals" : (state.activeHandFilter === "aces3" ? "3+ Aces Deals" : (state.activeHandFilter === "miser" ? "Misère Deals" : (state.activeHandFilter === "declarer" ? "Declarer Deals" : (state.activeHandFilter === "pass" ? "Pass Deals" : (state.activeHandFilter === "passing" ? "All Pass Deals" : "Whist Deals")))))))} • ${formatDealSplit(state.handMatches[state.activeHandFilter], state.activeHandFilter)}</h2>
+            <h2>${state.activeHandFilter === "hands" ? "Deals" : (state.activeHandFilter === "akq" ? "AKQ Suited Deals" : (state.activeHandFilter === "akqj" ? "AKQJ Suited Deals" : (state.activeHandFilter === "aces3" ? "3+ Aces Deals" : (state.activeHandFilter === "miser" ? "Misère Deals" : (state.activeHandFilter === "declarer" ? "Declarer Deals" : (state.activeHandFilter === "pass" ? "Pass Deals" : (state.activeHandFilter === "passing" ? "All Pass Deals" : (state.activeHandFilter === "passingZero" ? "All Pass 0 Tricks Deals" : "Whist Deals"))))))))} • ${formatDealSplit(state.handMatches[state.activeHandFilter], state.activeHandFilter)}</h2>
             ${(state.handMatches[state.activeHandFilter]?.length || 0) === 0 ? `<div class="empty">No matching deals found.</div>` : `
               <div class="filtered-table-wrap">
                 <table class="filtered-deals-table">
@@ -2085,6 +2203,17 @@
           renderMain();
         });
       });
+      content.querySelectorAll("[data-action='filter-passing-zero']").forEach(el => {
+        el.addEventListener("click", () => {
+          state.activeHandFilter = state.activeHandFilter === "passingZero" ? "" : "passingZero";
+          state.selectedGameId = null;
+          state.selectedGameDisplayId = null;
+          state.gameDetails = null;
+          state.gameDetailsMessage = "";
+          saveViewState();
+          renderMain();
+        });
+      });
       content.querySelectorAll("[data-action='filter-passing']").forEach(el => {
         el.addEventListener("click", () => {
           state.activeHandFilter = state.activeHandFilter === "passing" ? "" : "passing";
@@ -2296,6 +2425,18 @@
             scrollTopButton.hidden = scrollTop <= 4;
           }
         };
+        const appEl = document.getElementById("app");
+        const SIDEBAR_HIDDEN_KEY = "prefbuff_sidebar_hidden";
+        if (appEl && localStorage.getItem(SIDEBAR_HIDDEN_KEY) === "1") {
+          appEl.classList.add("sidebar-hidden");
+        }
+        document.addEventListener("click", (e) => {
+          const btn = e.target.closest("#sidebar-toggle-inline");
+          if (!btn || !appEl) return;
+          e.stopPropagation();
+          const hidden = appEl.classList.toggle("sidebar-hidden");
+          try { localStorage.setItem(SIDEBAR_HIDDEN_KEY, hidden ? "1" : "0"); } catch (_) {}
+        });
         if (appTitle) {
           appTitle.addEventListener("click", () => {
             state.selectedUserId = null;
