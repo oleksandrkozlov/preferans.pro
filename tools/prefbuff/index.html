@@ -6,6 +6,11 @@
   <link rel="icon" href="/prefbuff/favicon.ico" sizes="any" />
   <title>PREFBUFF - Preferans Statistics</title>
   <style>
+    @font-face {
+      font-family: "PreferansClient";
+      src: url("/assets/fonts/DejaVuSans.ttf") format("truetype");
+      font-display: swap;
+    }
     :root {
       --bg: #282a36;
       --panel: #44475a;
@@ -84,7 +89,59 @@
     .main {
       padding: 16px;
     }
-    h1 { margin: 0 0 6px; font-size: 20px; text-align: center; cursor: pointer; }
+    h1 { margin: 0 0 6px; font-size: 16px; text-align: center; cursor: pointer; }
+    .app-title {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      max-width: 100%;
+      font-family: "PreferansClient", ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    }
+    .app-title-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 4px;
+      text-shadow: 1px 1px 0 rgba(126, 138, 168, 0.35);
+    }
+    .app-title-main {
+      line-height: 1;
+      font-weight: 400;
+    }
+    .app-title-pro-wrap {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+      margin-top: 2px;
+    }
+    .app-title-pro {
+      color: var(--orange);
+      font-size: 0.42em;
+      line-height: 1;
+      letter-spacing: 0.05em;
+      font-weight: 400;
+      text-shadow: 0.5px 0.5px 0 rgba(255, 184, 108, 0.4);
+    }
+    .app-title-pro-line {
+      width: calc(100% + 2px);
+      height: 1px;
+      margin-left: 0;
+      background: var(--orange);
+      transform: rotate(-6deg);
+      transform-origin: left center;
+      opacity: 0.85;
+      border-radius: 999px;
+    }
+    .app-title-sub {
+      color: var(--muted);
+      font-size: 1.23em;
+      line-height: 1;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
     .sub { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
     .list-item {
       border: 1px solid var(--table-border);
@@ -563,7 +620,7 @@
       display: flex;
       flex-direction: column;
       gap: 6px;
-      margin-top: 10px;
+      margin: 10px 0 14px;
     }
     .compare-toggle {
       width: 100%;
@@ -719,11 +776,20 @@
 <body>
   <div id="app" class="app">
     <aside class="sidebar">
-      <h1 id="app-title" title="Clear selection">PREFBUFF</h1>
-      <div id="users"></div>
+      <h1 id="app-title" class="app-title" title="Clear selection">
+        <span class="app-title-top">
+          <span class="app-title-main">PREFERANS</span>
+          <span class="app-title-pro-wrap">
+            <span class="app-title-pro">PRO</span>
+            <span class="app-title-pro-line" aria-hidden="true"></span>
+          </span>
+        </span>
+        <span class="app-title-sub">PREFBUFF</span>
+      </h1>
       <div class="compare-controls">
         <button id="compare-toggle" class="compare-toggle" type="button">Overview</button>
       </div>
+      <div id="users"></div>
     </aside>
     <main class="main">
       <div id="content" class="section">
@@ -1380,6 +1446,7 @@
       let declarerTalonHcpTotal = 0;
       let decisionSamples = 0;
       const declaredByLevel = { 6: 0, 7: 0, 8: 0, 9: 0, 10: 0 };
+      const declaredCategoryByLevel = { 6: mkCat(), 7: mkCat(), 8: mkCat(), 9: mkCat(), 10: mkCat() };
 
       const contractLevelDigit = (contract) => {
         const text = String(contract ?? "").trim();
@@ -1419,7 +1486,10 @@
             }
             declarerTalonHcpTotal += talonHcp;
             const level = contractLevelDigit(deal?.contract);
-            if (level >= 6 && level <= 10) declaredByLevel[level] += 1;
+            if (level >= 6 && level <= 10) {
+              declaredByLevel[level] += 1;
+              addCat(declaredCategoryByLevel[level], dealMmr);
+            }
           }
           const rawDecision = deal?.decisions?.[playerId] ?? (deal?.declarer_id === playerId ? deal?.contract : "");
           const decisionText = String(rawDecision ?? "").trim();
@@ -1490,6 +1560,7 @@
         declarerMadePct: profitabilityRateText(declarer.positiveMmr, declarer.negativeAbsMmr),
         declarerCategory: declarer,
         miserCount: miser.count,
+        miserPct: percentText(miser.count, handsCount),
         miserMadePct: profitabilityRateText(miser.positiveMmr, miser.negativeAbsMmr),
         miserCategory: miser,
         passRatePct: percentText(pass.count, decisionSamples),
@@ -1506,6 +1577,21 @@
         declared8Count: declaredByLevel[8],
         declared9Count: declaredByLevel[9],
         declared10Count: declaredByLevel[10],
+        declared6Pct: percentText(declaredByLevel[6], handsCount),
+        declared7Pct: percentText(declaredByLevel[7], handsCount),
+        declared8Pct: percentText(declaredByLevel[8], handsCount),
+        declared9Pct: percentText(declaredByLevel[9], handsCount),
+        declared10Pct: percentText(declaredByLevel[10], handsCount),
+        declared6MadePct: profitabilityRateText(declaredCategoryByLevel[6].positiveMmr, declaredCategoryByLevel[6].negativeAbsMmr),
+        declared7MadePct: profitabilityRateText(declaredCategoryByLevel[7].positiveMmr, declaredCategoryByLevel[7].negativeAbsMmr),
+        declared8MadePct: profitabilityRateText(declaredCategoryByLevel[8].positiveMmr, declaredCategoryByLevel[8].negativeAbsMmr),
+        declared9MadePct: profitabilityRateText(declaredCategoryByLevel[9].positiveMmr, declaredCategoryByLevel[9].negativeAbsMmr),
+        declared10MadePct: profitabilityRateText(declaredCategoryByLevel[10].positiveMmr, declaredCategoryByLevel[10].negativeAbsMmr),
+        declared6Category: declaredCategoryByLevel[6],
+        declared7Category: declaredCategoryByLevel[7],
+        declared8Category: declaredCategoryByLevel[8],
+        declared9Category: declaredCategoryByLevel[9],
+        declared10Category: declaredCategoryByLevel[10],
         passingZeroTricksCount: passingZero.count,
         passingZeroTricksPct: percentText(passingZero.count, passing.count),
         passingZeroCategory: passingZero,
@@ -2400,7 +2486,26 @@
       const whistFamilyTip = "Percentage of deals played as whist/half-whist.";
       const declarerFamilyTip = "Percentage of deals played as declarer.";
       const allPassFamilyTip = "Percentage of deals where all players passed.";
-      const miserFamilyTip = "Number of deals played as misère.\n↑ - profitability rate for those deals: positive MMR divided by absolute MMR.";
+      const miserFamilyTip = "Percentage of deals played as misère.\n↑ - profitability rate for those deals: positive MMR divided by absolute MMR.";
+      const declaredRows = [6, 7, 8, 9, 10].flatMap(level => [
+        {
+          label: `${level} Game %`,
+          tip: `Percentage of deals played by this player as a ${level} game declarer.`,
+          text: d => esc(d.stats[`declared${level}Pct`]),
+        },
+        {
+          label: `${level} Game Profit.`,
+          tip: profitTip,
+          value: d => pctNum(d.stats[`declared${level}MadePct`]),
+          text: d => pctCell(d.stats[`declared${level}MadePct`]),
+          better: "higher",
+        },
+        {
+          label: `${level} Game Deals`,
+          tip: splitTip,
+          text: d => splitCell(d.stats[`declared${level}Category`]),
+        },
+      ]);
       return [
         { section: "Games" },
         { label: "Games", tip: "Total number of games.", value: d => d.totals.totalGames, text: d => String(d.totals.totalGames), better: "higher" },
@@ -2426,10 +2531,10 @@
         { label: "All Pass Deals", tip: splitTip, text: d => splitCell(d.stats.passingCategory) },
         { label: "All Pass 0 Tricks %", tip: "Percentage of All Pass deals played with 0 tricks.", text: d => esc(d.stats.passingZeroTricksPct) },
         { label: "All Pass 0 Tricks Deals", tip: splitTip, text: d => splitCell(d.stats.passingZeroCategory) },
-        { label: "Misère Deals", tip: "Number of deals played as misère.", text: d => String(d.stats.miserCount) },
+        ...declaredRows,
+        { label: "Misère %", tip: "Percentage of deals played as misère.", text: d => esc(d.stats.miserPct) },
         { label: "Misère Profit.", tip: profitTip, value: d => pctNum(d.stats.miserMadePct), text: d => pctCell(d.stats.miserMadePct), better: "higher" },
-        { label: "Misère Split", tip: splitTip, text: d => splitCell(d.stats.miserCategory) },
-        { label: "Declared 6/7/8/9/10", tip: "Number of deals declared as a 6/7/8/9/10 game.", text: d => `${d.stats.declared6Count}/${d.stats.declared7Count}/${d.stats.declared8Count}/${d.stats.declared9Count}/${d.stats.declared10Count}` },
+        { label: "Misère Deals", tip: splitTip, text: d => splitCell(d.stats.miserCategory) },
         { section: "Hands" },
         { label: "AKQ Suited %", tip: "Percentage of hands with at least one suited AKQ combination (e.g., A♠ K♠ Q♠).\nIn a uniformly random deal, the expected value is 9.54%.", text: d => {
           const v = pctNum(d.stats.suitedAKQPct);
@@ -2658,9 +2763,9 @@
               <div class="summary-label">0 Tricks</div>
               <div class="summary-value">${state.handStatsLoading ? "..." : (state.handStats ? state.handStats.passingZeroTricksPct : "-")}</div>
             </div>
-            <div class="summary-card ${state.activeHandFilter === "miser" ? "is-active" : ""}" data-action="filter-miser" data-tip="Number of deals played as misère.&#10;↑ - profitability rate for those deals: positive MMR divided by absolute MMR.">
+            <div class="summary-card ${state.activeHandFilter === "miser" ? "is-active" : ""}" data-action="filter-miser" data-tip="Percentage of deals played as misère.&#10;↑ - profitability rate for those deals: positive MMR divided by absolute MMR.">
               <div class="summary-label">Misère</div>
-              <div class="summary-value">${state.handStatsLoading ? "..." : (state.handStats ? state.handStats.miserCount : "-")}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${profitabilityClass(state.handStats?.miserMadePct || "")}">${state.handStats ? state.handStats.miserMadePct : "-"}</span></span></div>
+              <div class="summary-value">${state.handStatsLoading ? "..." : (state.handStats ? state.handStats.miserPct : "-")}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${profitabilityClass(state.handStats?.miserMadePct || "")}">${state.handStats ? state.handStats.miserMadePct : "-"}</span></span></div>
             </div>
             <div class="summary-card" data-tip="Total dump/pool/whist across all games.">
               <div class="summary-label">D/P/W</div>

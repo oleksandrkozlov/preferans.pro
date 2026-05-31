@@ -291,6 +291,7 @@ def _binary_response(handler: BaseHTTPRequestHandler, body: bytes, content_type:
 def make_handler(store: DataStore):
     index_path = Path(__file__).with_name("index.html")
     cards_dir = Path(__file__).with_name("cards")
+    fonts_dir = Path(__file__).resolve().parents[2] / "client" / "resources" / "fonts"
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_: Any) -> None:
@@ -312,6 +313,19 @@ def make_handler(store: DataStore):
                 icon_path = cards_dir / "favicon.ico"
                 if icon_path.exists() and icon_path.is_file():
                     _binary_response(self, icon_path.read_bytes(), "image/x-icon")
+                else:
+                    _text_response(self, "Not found", status=404)
+                return
+            if path.startswith("/assets/fonts/"):
+                filename = Path(path).name
+                font_path = fonts_dir / filename
+                if (
+                    filename.endswith(".ttf")
+                    and font_path.exists()
+                    and font_path.is_file()
+                    and font_path.resolve().parent == fonts_dir.resolve()
+                ):
+                    _binary_response(self, font_path.read_bytes(), "font/ttf")
                 else:
                     _text_response(self, "Not found", status=404)
                 return
