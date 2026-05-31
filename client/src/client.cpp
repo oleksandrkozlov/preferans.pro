@@ -1419,6 +1419,22 @@ auto drawCardFace(const Card& card, const r::Rectangle& dest, const Color tint =
     DrawTexturePro(card.texture, source, dest, {0.f, 0.f}, 0.f, tint);
 }
 
+auto drawCardShineEffect(const Card& card, const r::Vector2& cardPosition, const r::Color tint, const float elapsed) -> void
+{
+    auto& cardShineShader = ctx().cardShineShader;
+    if (not cardShineShader.isLoaded) {
+        card.texture.Draw(cardPosition, tint);
+        return;
+    }
+    const auto loopedElapsed = std::fmod(elapsed, 1000.0f);
+    const auto cardSize = std::array{CardWidth, CardHeight};
+    SetShaderValue(cardShineShader.shader, cardShineShader.timeLoc, &loopedElapsed, SHADER_UNIFORM_FLOAT);
+    SetShaderValue(cardShineShader.shader, cardShineShader.cardSizeLoc, cardSize.data(), SHADER_UNIFORM_VEC2);
+    BeginShaderMode(cardShineShader.shader);
+    card.texture.Draw(cardPosition, tint);
+    EndShaderMode();
+}
+
 auto drawBackCard(const r::Rectangle& card) -> void
 {
     if (card.width <= 0.f or card.height <= 0.f) { return; }
@@ -4380,12 +4396,7 @@ auto drawCardShineEffect(const Card& card, const bool isHovered, const r::Vector
         cardShineShader.hoverStartTime = now;
     }
     const auto elapsed = static_cast<float>(std::fmod(now - cardShineShader.hoverStartTime, 1000.0));
-    const auto cardSize = std::array{CardWidth, CardHeight};
-    SetShaderValue(cardShineShader.shader, cardShineShader.timeLoc, &elapsed, SHADER_UNIFORM_FLOAT);
-    SetShaderValue(cardShineShader.shader, cardShineShader.cardSizeLoc, cardSize.data(), SHADER_UNIFORM_VEC2);
-    BeginShaderMode(cardShineShader.shader);
-    card.texture.Draw(cardPosition, tint);
-    EndShaderMode();
+    drawCardShineEffect(card, cardPosition, tint, elapsed);
 }
 
 auto drawHandTurnAura(const r::Rectangle& cardsRect) -> void
@@ -5021,9 +5032,17 @@ auto drawPendingTalonReveal() -> void
     const auto revealProgress = std::clamp(
         static_cast<float>((ctx().window.GetTime() - ctx().pendingTalonRevealStartedAt) / appearDuration), 0.0f, 1.0f);
     const auto easedProgress = easeOutCubic(revealProgress);
+    const auto showCenterShine = revealProgress >= 1.0f && ctx().window.GetTime() < ctx().pendingTalonRevealUntil;
+    const auto shineStartTime = ctx().pendingTalonRevealStartedAt + appearDuration;
+    static constexpr auto talonCenterShineSpeed = 1.7f;
     for (const auto [i, cardName] : ctx().pendingTalonReveal | rv::enumerate) {
         const auto pos = Vector2Lerp(fromPositions.at(i), positions.at(i), easedProgress);
-        drawCardFace(getCard(cardName), {pos.x, pos.y, CardWidth, CardHeight});
+        if (showCenterShine) {
+            const auto elapsed = static_cast<float>(ctx().window.GetTime() - shineStartTime) * talonCenterShineSpeed;
+            drawCardShineEffect(getCard(cardName), pos, WHITE, elapsed);
+        } else {
+            drawCardFace(getCard(cardName), {pos.x, pos.y, CardWidth, CardHeight});
+        }
     }
 }
 
