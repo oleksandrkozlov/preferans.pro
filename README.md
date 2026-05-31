@@ -21,8 +21,8 @@ serialization. Voice communication between players is implemented using
 
 ```
 git submodule update --init --recursive
-xhost +local:docker # requires x11-xserver-utils
-DOCKER_BUILDKIT=0 docker build --tag preferans .
+xhost +local:docker
+DOCKER_BUILDKIT=0 docker build --pull --tag preferans .
 ```
 
 #### Linux
