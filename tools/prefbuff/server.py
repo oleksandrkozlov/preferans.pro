@@ -4,15 +4,105 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
 import sys
+import threading
+import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
+
+
+ANALYSIS_CACHE: dict[str, str] = {}
+ANALYSIS_MODEL = os.environ.get("PREFBUFF_ANALYSIS_MODEL", "claude-sonnet-4-6")
+ANALYSIS_SYSTEM_PROMPT = (
+    "You are an experienced Preferans analyst (3-player Russian variant).\n"
+    "Input JSON: `player_name`, `stats`, `gameTotals` for the target player; "
+    "`opponents` maps other players to the same structure. All played the same deals, so comparisons are valid.\n\n"
+    "`gameTotals`: `totalGames`, `totalMmr` (PRIMARY rating metric — base final conclusions on it), "
+    "`gameProfitabilityPct` (positive MMR / total absolute MMR across games), `totalDump`, `totalPool`, `totalWhists`.\n\n"
+    "`stats`: `handsCount`, `dealsPositive`, `dealsNegative`, "
+    "`avgHcp` (~12.5 random), "
+    "`avgCardPoints` (~45 random), contract counts `declared6Count`..`declared10Count`, `miserCount`, `passingZeroTricksCount`.\n\n"
+    "Categories — each object has `{count, positive, negative, mmrSum, positiveMmr, negativeAbsMmr}`:\n"
+    "- `declarerCategory` + `declarerPct` (share), `declarerProfitabilityPct`\n"
+    "- `miserCategory` + `miserProfitabilityPct`\n"
+    "- `passCategory` + `passRatePct`, `passProfitabilityPct`\n"
+    "- `whistCategory` + `whistRatePct`, `whistProfitabilityPct` (whist/half-whist)\n"
+    "- `passingCategory` + `passingRatePct`, `passingProfitabilityPct` (all-pass deals)\n"
+    "- `passingZeroCategory` + `passingZeroTricksPct` (all-pass, 0 tricks taken)\n"
+    "- `suitedAKQCategory` + `suitedAKQPct` (~9.54% random)\n"
+    "- `suitedAKQJCategory` + `suitedAKQJPct` (~2.33% random)\n"
+    "- `threePlusAcesCategory` + `threePlusAcesPct` (~7.93% random)\n\n"
+    "`Pct` fields are percent strings (e.g. \"9.8%\"). "
+    "Profitability means positive MMR divided by total absolute MMR, not share of winning deals.\n\n"
+    "Task: write a short analysis of the player's style — ONE paragraph, 2–4 sentences, "
+    "no headings/lists/markdown, NO exact numbers or percentages, starting with the player's name.\n"
+    "Use qualitative comparisons (\"more often than others\", \"on average\", \"noticeably weaker\", \"consistently profitable\", \"stands out\"). "
+    "Compare with opponents where meaningful.\n"
+    "Cover: overall style (aggressive/conservative/balanced), entry threshold (tight/loose), "
+    "performance as declarer / on pass / in all-pass / whisting, behavior on strong vs weak hands, "
+    "main strengths and weaknesses, and a final verdict on long-term result (driven primarily by `totalMmr`, with `gameProfitabilityPct` as a supporting efficiency signal).\n"
+    "Tone: analytical, neutral, confident. Do not invent anything beyond the data."
+)
+
+
+def _strip_leading_name(text: str, player_name: Any) -> str:
+    if not player_name:
+        return text
+    name = str(player_name).strip().lower()
+    if not name:
+        return text
+    lines = text.lstrip().split("\n")
+    if not lines:
+        return text
+    first = lines[0].strip()
+    stripped = first.lstrip("#").strip().strip("*_` ").rstrip(":").strip()
+    if stripped.lower() == name:
+        rest = "\n".join(lines[1:]).lstrip("\n")
+        return rest
+    return text
+
+
+def _call_claude(stats_payload: dict[str, Any]) -> str:
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY is not set")
+    body = {
+        "model": ANALYSIS_MODEL,
+        "max_tokens": 4096,
+        "system": [{"type": "text", "text": ANALYSIS_SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+        "messages": [
+            {
+                "role": "user",
+                "content": f"Player statistics (JSON):\n{json.dumps(stats_payload, ensure_ascii=False)}",
+            }
+        ],
+    }
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Anthropic API {exc.code}: {body}") from None
+    chunks = [block.get("text", "") for block in data.get("content", []) if block.get("type") == "text"]
+    return "".join(chunks).strip()
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -62,6 +152,7 @@ class DataStore:
     data_path: Path
     _mtime_ns: int | None = None
     _payload: dict[str, Any] = field(default_factory=dict)
+    _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def get(self) -> dict[str, Any]:
         try:
@@ -72,10 +163,17 @@ class DataStore:
                 "games": {},
                 "error": f"Data file not found: {self.data_path}",
             }
-        if self._mtime_ns != current_mtime:
-            self._payload = self._load()
-            self._mtime_ns = current_mtime
-        return self._payload
+        with self._lock:
+            if self._mtime_ns != current_mtime:
+                self._payload = self._load()
+                self._mtime_ns = current_mtime
+            return self._payload
+
+    def version(self) -> int:
+        try:
+            return os.stat(self.data_path).st_mtime_ns
+        except FileNotFoundError:
+            return 0
 
     def _load(self) -> dict[str, Any]:
         global PREF_PB2
@@ -166,30 +264,28 @@ class DataStore:
         return {"users": users, "games": games}
 
 
+def _safe_write(handler: BaseHTTPRequestHandler, status: int, content_type: str, body: bytes) -> None:
+    try:
+        handler.send_response(status)
+        handler.send_header("Content-Type", content_type)
+        handler.send_header("Content-Length", str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+    except (BrokenPipeError, ConnectionResetError):
+        pass
+
+
 def _json_response(handler: BaseHTTPRequestHandler, payload: Any, status: int = 200) -> None:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    handler.send_response(status)
-    handler.send_header("Content-Type", "application/json; charset=utf-8")
-    handler.send_header("Content-Length", str(len(body)))
-    handler.end_headers()
-    handler.wfile.write(body)
+    _safe_write(handler, status, "application/json; charset=utf-8", body)
 
 
 def _text_response(handler: BaseHTTPRequestHandler, text: str, status: int = 200) -> None:
-    body = text.encode("utf-8")
-    handler.send_response(status)
-    handler.send_header("Content-Type", "text/plain; charset=utf-8")
-    handler.send_header("Content-Length", str(len(body)))
-    handler.end_headers()
-    handler.wfile.write(body)
+    _safe_write(handler, status, "text/plain; charset=utf-8", text.encode("utf-8"))
 
 
 def _binary_response(handler: BaseHTTPRequestHandler, body: bytes, content_type: str, status: int = 200) -> None:
-    handler.send_response(status)
-    handler.send_header("Content-Type", content_type)
-    handler.send_header("Content-Length", str(len(body)))
-    handler.end_headers()
-    handler.wfile.write(body)
+    _safe_write(handler, status, content_type, body)
 
 
 def make_handler(store: DataStore):
@@ -259,17 +355,68 @@ def make_handler(store: DataStore):
             if path.startswith("/api/games/"):
                 game_id = path.split("/")[-1]
                 game = data["games"].get(game_id)
-                if game is None:
-                    _json_response(self, {"error": f"Unknown game: {game_id}"}, status=404)
-                    return
-                _json_response(self, game)
+                _json_response(self, game if game is not None else None)
                 return
 
             if path == "/api/health":
                 _json_response(self, {"ok": True})
                 return
 
+            if path == "/api/version":
+                _json_response(self, {"version": store.version()})
+                return
+
             _text_response(self, "Not found", status=404)
+
+        def do_POST(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            path = unquote(parsed.path)
+            if not path.endswith("/api/analysis"):
+                _text_response(self, "Not found", status=404)
+                return
+            length = int(self.headers.get("Content-Length") or 0)
+            raw = self.rfile.read(length) if length > 0 else b""
+            try:
+                payload = json.loads(raw.decode("utf-8") or "{}")
+            except ValueError:
+                _json_response(self, {"error": "Invalid JSON"}, status=400)
+                return
+            stats = payload.get("stats")
+            if not isinstance(stats, dict):
+                _json_response(self, {"error": "Missing stats object"}, status=400)
+                return
+            opponents = payload.get("opponents") if isinstance(payload.get("opponents"), dict) else {}
+            game_totals = payload.get("gameTotals") if isinstance(payload.get("gameTotals"), dict) else {}
+            cache_payload = {
+                "player_name": payload.get("player_name"),
+                "stats": stats,
+                "gameTotals": game_totals,
+                "opponents": opponents,
+            }
+            # Cache only by number of games played — regenerate only when a new game is added
+            # for the target player or any opponent, not on every data refresh.
+            cache_signature = {
+                "player_name": payload.get("player_name"),
+                "totalGames": game_totals.get("totalGames"),
+                "opponents": {
+                    pid: (op.get("gameTotals") or {}).get("totalGames")
+                    for pid, op in opponents.items()
+                    if isinstance(op, dict)
+                },
+            }
+            cache_blob = json.dumps(cache_signature, ensure_ascii=False, sort_keys=True)
+            cache_key = hashlib.sha256(cache_blob.encode("utf-8")).hexdigest()
+            if cache_key in ANALYSIS_CACHE:
+                _json_response(self, {"text": ANALYSIS_CACHE[cache_key], "cached": True})
+                return
+            try:
+                text = _call_claude(cache_payload)
+            except Exception as exc:  # noqa: BLE001
+                _json_response(self, {"error": str(exc)}, status=500)
+                return
+            text = _strip_leading_name(text, payload.get("player_name"))
+            ANALYSIS_CACHE[cache_key] = text
+            _json_response(self, {"text": text, "cached": False})
 
     return Handler
 

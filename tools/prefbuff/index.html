@@ -46,7 +46,7 @@
     }
     .user-header {
       display: flex;
-      align-items: center;
+      align-items: baseline;
       gap: 8px;
       min-height: 32px;
       margin-bottom: 8px;
@@ -55,10 +55,7 @@
       display: flex;
       align-items: center;
       margin: 0;
-      min-height: 32px;
       line-height: 1.1;
-      position: relative;
-      top: 4px;
     }
     .sidebar-toggle {
       display: inline-flex;
@@ -86,7 +83,6 @@
     }
     .main {
       padding: 16px;
-      overflow: auto;
     }
     h1 { margin: 0 0 6px; font-size: 20px; text-align: center; cursor: pointer; }
     .sub { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
@@ -157,6 +153,11 @@
       overflow: visible;
       text-overflow: clip;
       overflow-wrap: anywhere;
+    }
+    .summary-subvalue {
+      font-size: 12px;
+      font-weight: 700;
+      opacity: 0.92;
     }
     .games-block {
       margin-bottom: 14px;
@@ -289,6 +290,12 @@
       padding: 8px 9px;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
       display: none;
+    }
+    .stat-tooltip p {
+      margin: 0;
+    }
+    .stat-tooltip strong {
+      font-weight: 800;
     }
     .stat-tooltip.score-good {
       color: var(--green);
@@ -526,6 +533,7 @@
     .score-good { color: var(--green); font-weight: 700; }
     .score-bad { color: var(--red); font-weight: 700; }
     .score-mid { color: var(--orange); font-weight: 700; }
+    .score-even { color: var(--yellow); font-weight: 700; }
     .scroll-top-button {
       position: fixed;
       left: 65.5px;
@@ -551,6 +559,150 @@
     .scroll-top-button[hidden] {
       display: none;
     }
+    .compare-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 10px;
+    }
+    .compare-toggle {
+      width: 100%;
+      padding: 6px 10px;
+      border: 1px solid var(--table-border);
+      border-radius: 8px;
+      background: var(--table-bg-alt);
+      color: var(--text);
+      font-weight: 700;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+    }
+    .compare-toggle:hover { border-color: var(--accent); }
+    .compare-toggle.is-active {
+      border-color: var(--accent);
+      background: rgba(139, 233, 253, 0.12);
+      color: var(--accent);
+    }
+    .compare-view-header {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .compare-view-header h2 { margin: 0; font-size: 18px; }
+    .compare-title-row {
+      padding-top: 8px;
+      margin-bottom: 10px;
+    }
+    .compare-title {
+      margin: 0;
+      text-align: center;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .compare-close {
+      margin-left: auto;
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      border: 1px solid var(--table-border);
+      border-radius: 999px;
+      background: rgba(37, 43, 60, 0.94);
+      color: var(--accent);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3);
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .compare-close.compare-floating-close {
+      position: fixed;
+      z-index: 80;
+      margin-left: 0;
+    }
+    .compare-close:hover { border-color: var(--accent); }
+    .compare-table-outer {
+      text-align: center;
+    }
+    .compare-table-wrap {
+      overflow: visible;
+      border: 1px solid var(--table-border);
+      border-radius: 8px;
+      display: inline-block;
+      max-width: 100%;
+      vertical-align: top;
+      text-align: left;
+    }
+    .compare-table {
+      width: auto;
+      border-collapse: collapse;
+      font-size: 13px;
+      background: var(--table-bg);
+    }
+    .compare-table tbody td:not(.stat-label),
+    .compare-table thead th:not(:first-child) {
+      text-align: right;
+      white-space: nowrap;
+    }
+    .compare-table th, .compare-table td {
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--table-border);
+      text-align: left;
+      vertical-align: middle;
+    }
+    .compare-table thead th {
+      background: var(--table-head-bg);
+      color: #d7def5;
+      font-weight: 600;
+      font-size: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    .compare-table tbody tr:nth-child(even) { background: var(--table-bg-alt); }
+    .compare-table .stat-label {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 700;
+      white-space: nowrap;
+      width: 1%;
+    }
+    .compare-table thead th:first-child { width: 1%; white-space: nowrap; }
+    .compare-table .section-row td {
+      background: var(--table-total-bg);
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .compare-table td.compare-best {
+      box-shadow: inset 3px 0 0 var(--green);
+    }
+    .compare-table td.compare-mid {
+      box-shadow: inset 3px 0 0 var(--orange);
+    }
+    .compare-table td.compare-worst {
+      box-shadow: inset 3px 0 0 var(--red);
+    }
+    .compare-empty {
+      color: var(--muted);
+      font-style: italic;
+      padding: 14px 2px 14px 56px;
+    }
+    .compare-empty.compare-empty-inline {
+      padding: 0;
+    }
     @media (max-width: 980px) {
       .app { grid-template-columns: 1fr; }
       .sidebar { border-right: none; border-bottom: 1px solid var(--line); max-height: 36vh; }
@@ -569,6 +721,9 @@
     <aside class="sidebar">
       <h1 id="app-title" title="Clear selection">PREFBUFF</h1>
       <div id="users"></div>
+      <div class="compare-controls">
+        <button id="compare-toggle" class="compare-toggle" type="button">Overview</button>
+      </div>
     </aside>
     <main class="main">
       <div id="content" class="section">
@@ -598,15 +753,100 @@
       handStatsError: "",
       handMatches: { hands: [], akq: [], akqj: [], aces3: [], miser: [], declarer: [], pass: [], passing: [], passingZero: [], whist: [] },
       activeHandFilter: "",
-      pendingGameScrollId: null
+      pendingGameScrollId: null,
+      opponentHandStats: {},
+      analysisByUser: {},
+      analysisLoadingFor: null,
+      analysisErrorFor: null,
+      analysisError: "",
+      analysisCollapsed: false,
+      comparisonMode: false,
+      comparisonSelectedUserIds: [],
+      comparisonData: null,
+      comparisonLoading: false,
+      comparisonError: "",
+      comparisonCacheKey: ""
     };
     const VIEW_STATE_KEY = "prefbuff_view_state_v1";
     let refreshTimer = null;
     let refreshInFlight = false;
+    let lastDataVersion = null;
+
+    async function fetchDataVersion() {
+      try {
+        const res = await fetch("api/version", { cache: "no-store" });
+        if (!res.ok) return null;
+        const body = await res.json();
+        return body && body.version !== undefined ? body.version : null;
+      } catch (_) {
+        return null;
+      }
+    }
     const statTooltipEl = document.getElementById("stat-tooltip");
 
     function esc(v) {
       return String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+    }
+
+    function renderInlineMarkdown(line) {
+      let s = esc(line);
+      s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+      s = s.replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+      s = s.replace(/`([^`]+)`/g, "<code>$1</code>");
+      return s;
+    }
+
+    function renderMarkdown(text) {
+      const lines = String(text ?? "").replace(/\r\n/g, "\n").split("\n");
+      const out = [];
+      let inList = false;
+      let paragraph = [];
+      const flushParagraph = () => {
+        if (paragraph.length) {
+          out.push(`<p>${paragraph.map(renderInlineMarkdown).join("<br>")}</p>`);
+          paragraph = [];
+        }
+      };
+      const closeList = () => {
+        if (inList) {
+          out.push("</ul>");
+          inList = false;
+        }
+      };
+      for (const rawLine of lines) {
+        const line = rawLine.replace(/\s+$/, "");
+        if (line.trim() === "") {
+          flushParagraph();
+          closeList();
+          continue;
+        }
+        if (/^\s*(?:---+|\*\*\*+|___+)\s*$/.test(line)) {
+          flushParagraph();
+          closeList();
+          out.push("<hr>");
+          continue;
+        }
+        const h = /^(#{1,6})\s+(.*)$/.exec(line);
+        if (h) {
+          flushParagraph();
+          closeList();
+          const lvl = h[1].length;
+          out.push(`<h${lvl}>${renderInlineMarkdown(h[2])}</h${lvl}>`);
+          continue;
+        }
+        const b = /^\s*[-*]\s+(.*)$/.exec(line);
+        if (b) {
+          flushParagraph();
+          if (!inList) { out.push("<ul>"); inList = true; }
+          out.push(`<li>${renderInlineMarkdown(b[1])}</li>`);
+          continue;
+        }
+        closeList();
+        paragraph.push(line);
+      }
+      flushParagraph();
+      closeList();
+      return out.join("\n");
     }
 
     function normalizeCard(rawName) {
@@ -806,6 +1046,13 @@
       return `<img class="card-img" loading="lazy" src="/assets/cards/${encodeURIComponent(filename)}" alt="${esc(String(name))}" />`;
     }
 
+    function formatCompactNumber(value) {
+      const n = Number(value || 0);
+      const abs = Math.abs(n);
+      if (abs < 10000) return `${(n / 1000).toFixed(1)}k`;
+      return `${Math.round(n / 1000)}k`;
+    }
+
     function formatDuration(totalSec) {
       const sec = Math.max(0, Number(totalSec || 0));
       const h = Math.floor(sec / 3600);
@@ -893,6 +1140,9 @@
           scoreSortDir: state.scoreSortDir,
           filteredDealsSortKey: state.filteredDealsSortKey,
           filteredDealsSortDir: state.filteredDealsSortDir,
+          analysisCollapsed: state.analysisCollapsed,
+          comparisonMode: state.comparisonMode,
+          comparisonSelectedUserIds: state.comparisonSelectedUserIds,
         }));
       } catch (_) {}
     }
@@ -908,6 +1158,11 @@
         state.scoreSortDir = (parsed?.scoreSortDir === "asc" || parsed?.scoreSortDir === "desc") ? parsed.scoreSortDir : "desc";
         state.filteredDealsSortKey = parsed?.filteredDealsSortKey || "game";
         state.filteredDealsSortDir = (parsed?.filteredDealsSortDir === "asc" || parsed?.filteredDealsSortDir === "desc") ? parsed.filteredDealsSortDir : "desc";
+        state.analysisCollapsed = Boolean(parsed?.analysisCollapsed);
+        state.comparisonMode = Boolean(parsed?.comparisonMode);
+        state.comparisonSelectedUserIds = Array.isArray(parsed?.comparisonSelectedUserIds)
+          ? parsed.comparisonSelectedUserIds.filter(v => typeof v === "string")
+          : [];
       } catch (_) {}
     }
 
@@ -1086,28 +1341,45 @@
       return `${((value * 100) / total).toFixed(1)}%`;
     }
 
+    function profitabilityRateText(positiveMmr, negativeAbsMmr) {
+      const totalAbsMmr = positiveMmr + negativeAbsMmr;
+      if (!totalAbsMmr) return "0.0%";
+      return `${((positiveMmr * 100) / totalAbsMmr).toFixed(1)}%`;
+    }
+
     function computeHandStatsForPlayer(playerId, gameDetailsList) {
       const suitOrder = ["♠", "♦", "♣", "♥"];
       let handsCount = 0;
+      let decisiveHandsCount = 0;
+      let dealsPositive = 0;
+      let dealsNegative = 0;
+      let dealsMmrSum = 0;
       let hcpTotal = 0;
       let cardPointsTotal = 0;
-      let suitedAKQ = 0;
-      let suitedAKQJ = 0;
-      let threePlusAces = 0;
-      let declarerCount = 0;
-      let declarerMadeCount = 0;
-      let miserCount = 0;
-      let miserMadeCount = 0;
+      const mkCat = () => ({ count: 0, positive: 0, negative: 0, mmrSum: 0, positiveMmr: 0, negativeAbsMmr: 0 });
+      const addCat = (b, mmr) => {
+        b.count += 1;
+        b.mmrSum += mmr;
+        if (mmr > 0) {
+          b.positive += 1;
+          b.positiveMmr += mmr;
+        } else if (mmr < 0) {
+          b.negative += 1;
+          b.negativeAbsMmr += Math.abs(mmr);
+        }
+      };
+      const declarer = mkCat();
+      const miser = mkCat();
+      const pass = mkCat();
+      const whist = mkCat();
+      const passing = mkCat();
+      const passingZero = mkCat();
+      const akq = mkCat();
+      const akqj = mkCat();
+      const aces3 = mkCat();
       let declarerTalonHcpTotal = 0;
       let decisionSamples = 0;
-      let passCount = 0;
-      let passMadeCount = 0;
-      let passingCount = 0;
-      let passingMadeCount = 0;
-      let whistLikeCount = 0;
-      let whistMadeCount = 0;
       const declaredByLevel = { 6: 0, 7: 0, 8: 0, 9: 0, 10: 0 };
-      let passingZeroTricksCount = 0;
 
       const contractLevelDigit = (contract) => {
         const text = String(contract ?? "").trim();
@@ -1128,14 +1400,17 @@
           if (!Array.isArray(cards) || cards.length === 0) continue;
           handsCount += 1;
           const dealMmr = Number(deal?.scores?.[playerId]?.mmr || 0);
+          const isDraftDeal = dealMmr === 0;
+          if (!isDraftDeal) decisiveHandsCount += 1;
+          dealsMmrSum += dealMmr;
+          if (dealMmr > 0) {
+            dealsPositive += 1;
+          } else if (dealMmr < 0) {
+            dealsNegative += 1;
+          }
           if (deal?.declarer_id === playerId) {
-            declarerCount += 1;
-            const declarerDealMmr = dealMmr;
-            if (declarerDealMmr > 0) declarerMadeCount += 1;
-            if (isMiserContract(deal?.contract)) {
-              miserCount += 1;
-              if (declarerDealMmr > 0) miserMadeCount += 1;
-            }
+            addCat(declarer, dealMmr);
+            if (isMiserContract(deal?.contract)) addCat(miser, dealMmr);
             const talon = Array.isArray(deal?.talon) ? deal.talon : [];
             let talonHcp = 0;
             for (const tc of talon) {
@@ -1151,19 +1426,12 @@
           if (decisionText !== "") {
             decisionSamples += 1;
             const decisionKey = decisionText.toLowerCase();
-            if (isPassDecision(rawDecision)) {
-              passCount += 1;
-              if (dealMmr > 0) passMadeCount += 1;
-            }
-            if (decisionKey.includes("whist")) {
-              whistLikeCount += 1;
-              if (dealMmr > 0) whistMadeCount += 1;
-            }
+            if (isPassDecision(rawDecision)) addCat(pass, dealMmr);
+            if (decisionKey.includes("whist")) addCat(whist, dealMmr);
           }
           if (allPlayersPassed(deal)) {
-            passingCount += 1;
-            if (dealMmr > 0) passingMadeCount += 1;
-            if (Number(deal?.tricks?.[playerId] || 0) === 0) passingZeroTricksCount += 1;
+            addCat(passing, dealMmr);
+            if (Number(deal?.tricks?.[playerId] || 0) === 0) addCat(passingZero, dealMmr);
           }
 
           const bySuit = { "♠": [], "♦": [], "♣": [], "♥": [] };
@@ -1181,7 +1449,6 @@
           }
           hcpTotal += hcp;
           cardPointsTotal += cardPoints;
-          if (aces >= 3) threePlusAces += 1;
 
           const hasSuitRanks = (ranks, required) => required.every(r => ranks.includes(r));
           let handHasAKQ = false;
@@ -1195,39 +1462,53 @@
               handHasAKQJ = true;
             }
           }
-          if (handHasAKQ) suitedAKQ += 1;
-          if (handHasAKQJ) suitedAKQJ += 1;
+          if (handHasAKQ) addCat(akq, dealMmr);
+          if (handHasAKQJ) addCat(akqj, dealMmr);
+          if (aces >= 3) addCat(aces3, dealMmr);
         }
       }
 
       return {
         handsCount,
+        decisiveHandsCount,
+        dealsPositive,
+        dealsNegative,
+        dealsMmrSum,
         avgHcp: handsCount ? (hcpTotal / handsCount) : 0,
         avgCardPoints: handsCount ? (cardPointsTotal / handsCount) : 0,
-        suitedAKQRate: handsCount ? ((suitedAKQ * 100) / handsCount) : 0,
-        suitedAKQJRate: handsCount ? ((suitedAKQJ * 100) / handsCount) : 0,
-        threePlusAcesRate: handsCount ? ((threePlusAces * 100) / handsCount) : 0,
-        suitedAKQPct: percentText(suitedAKQ, handsCount),
-        suitedAKQJPct: percentText(suitedAKQJ, handsCount),
-        threePlusAcesPct: percentText(threePlusAces, handsCount),
-        declarerPct: percentText(declarerCount, handsCount),
-        declarerMadePct: percentText(declarerMadeCount, declarerCount),
-        miserCount,
-        miserMadePct: percentText(miserMadeCount, miserCount),
-        avgDeclarerTalonHcp: declarerCount ? (declarerTalonHcpTotal / declarerCount) : 0,
-        passRatePct: percentText(passCount, decisionSamples),
-        passMadePct: percentText(passMadeCount, passCount),
-        passingRatePct: percentText(passingCount, handsCount),
-        passingMadePct: percentText(passingMadeCount, passingCount),
-        whistRatePct: percentText(whistLikeCount, decisionSamples),
-        whistMadePct: percentText(whistMadeCount, whistLikeCount),
+        avgDeclarerTalonHcp: declarer.count ? (declarerTalonHcpTotal / declarer.count) : 0,
+        suitedAKQRate: handsCount ? ((akq.count * 100) / handsCount) : 0,
+        suitedAKQJRate: handsCount ? ((akqj.count * 100) / handsCount) : 0,
+        threePlusAcesRate: handsCount ? ((aces3.count * 100) / handsCount) : 0,
+        suitedAKQPct: percentText(akq.count, handsCount),
+        suitedAKQJPct: percentText(akqj.count, handsCount),
+        threePlusAcesPct: percentText(aces3.count, handsCount),
+        suitedAKQCategory: akq,
+        suitedAKQJCategory: akqj,
+        threePlusAcesCategory: aces3,
+        declarerPct: percentText(declarer.count, handsCount),
+        declarerMadePct: profitabilityRateText(declarer.positiveMmr, declarer.negativeAbsMmr),
+        declarerCategory: declarer,
+        miserCount: miser.count,
+        miserMadePct: profitabilityRateText(miser.positiveMmr, miser.negativeAbsMmr),
+        miserCategory: miser,
+        passRatePct: percentText(pass.count, decisionSamples),
+        passMadePct: profitabilityRateText(pass.positiveMmr, pass.negativeAbsMmr),
+        passCategory: pass,
+        passingRatePct: percentText(passing.count, handsCount),
+        passingMadePct: profitabilityRateText(passing.positiveMmr, passing.negativeAbsMmr),
+        passingCategory: passing,
+        whistRatePct: percentText(whist.count, decisionSamples),
+        whistMadePct: profitabilityRateText(whist.positiveMmr, whist.negativeAbsMmr),
+        whistCategory: whist,
         declared6Count: declaredByLevel[6],
         declared7Count: declaredByLevel[7],
         declared8Count: declaredByLevel[8],
         declared9Count: declaredByLevel[9],
         declared10Count: declaredByLevel[10],
-        passingZeroTricksCount,
-        passingZeroTricksPct: percentText(passingZeroTricksCount, passingCount),
+        passingZeroTricksCount: passingZero.count,
+        passingZeroTricksPct: percentText(passingZero.count, passing.count),
+        passingZeroCategory: passingZero,
       };
     }
 
@@ -1240,12 +1521,38 @@
       renderMain();
       const userIdAtRequestStart = state.selectedUserId;
       try {
+        const fetchWithTimeout = (path, ms) => new Promise(resolve => {
+          let done = false;
+          const timer = setTimeout(() => { if (!done) { done = true; resolve(null); } }, ms);
+          api(path).then(v => { if (!done) { done = true; clearTimeout(timer); resolve(v); } })
+                   .catch(() => { if (!done) { done = true; clearTimeout(timer); resolve(null); } });
+        });
         const allGameDetails = await Promise.all(
-          state.games.map(g => api(`api/games/${g.id}`).catch(() => null))
+          state.games.map(g => fetchWithTimeout(`api/games/${g.id}`, 15000))
         );
         if (state.selectedUserId !== userIdAtRequestStart) return;
         const valid = allGameDetails.filter(Boolean);
         state.handStats = computeHandStatsForPlayer(state.selectedUserId, valid);
+        const allPlayerIds = new Set();
+        for (const g of valid) {
+          for (const d of (g?.deals || [])) {
+            for (const pid of Object.keys(d?.hands || {})) allPlayerIds.add(pid);
+          }
+        }
+        const opponentIds = [...allPlayerIds].filter(pid => pid !== state.selectedUserId);
+        const opponentGamesLists = await Promise.all(
+          opponentIds.map(pid => fetchWithTimeout(`api/users/${encodeURIComponent(pid)}/games`, 15000))
+        );
+        state.opponentHandStats = {};
+        opponentIds.forEach((pid, i) => {
+          const opponentUser = state.users.find(u => u.player_id === pid);
+          const opponentGames = Array.isArray(opponentGamesLists[i]) ? opponentGamesLists[i] : [];
+          state.opponentHandStats[pid] = {
+            player_name: opponentUser?.player_name || pid,
+            stats: computeHandStatsForPlayer(pid, valid),
+            gameTotals: buildTotals(opponentGames),
+          };
+        });
         state.handMatches = {
           hands: collectMatchesForPlayer(state.selectedUserId, valid, () => true),
           akq: collectAkqMatchesForPlayer(state.selectedUserId, valid),
@@ -1278,15 +1585,86 @@
             return decisionKey.includes("whist");
           }),
         };
-        state.handStatsCacheKey = cacheKey;
       } catch (err) {
-        if (state.selectedUserId !== userIdAtRequestStart) return;
-        state.handStatsError = String(err?.message || err || "Failed to load hand stats.");
-      } finally {
         if (state.selectedUserId === userIdAtRequestStart) {
-          state.handStatsLoading = false;
-          renderMain();
+          state.handStatsError = String(err?.message || err || "Failed to load hand stats.");
         }
+      } finally {
+        state.handStatsCacheKey = cacheKey;
+        state.handStatsLoading = false;
+        if (state.selectedUserId === userIdAtRequestStart) renderMain();
+      }
+    }
+
+    async function generatePlayerAnalysis() {
+      const userId = state.selectedUserId;
+      if (!userId || !state.handStats) return;
+      const user = state.users.find(u => u.player_id === userId);
+      state.analysisLoadingFor = userId;
+      state.analysisErrorFor = null;
+      state.analysisError = "";
+      renderMain();
+      try {
+        const stripStats = (stats) => {
+          if (!stats) return stats;
+          const {
+            avgDeclarerTalonHcp: _o1, dealsMmrSum: _o2,
+            suitedAKQRate,
+            suitedAKQJRate,
+            threePlusAcesRate,
+            declarerMadePct,
+            miserMadePct,
+            passMadePct,
+            passingMadePct,
+            whistMadePct,
+            ...rest
+          } = stats;
+          return {
+            ...rest,
+            declarerProfitabilityPct: declarerMadePct,
+            miserProfitabilityPct: miserMadePct,
+            passProfitabilityPct: passMadePct,
+            passingProfitabilityPct: passingMadePct,
+            whistProfitabilityPct: whistMadePct,
+            suitedAKQPct: String(rest.suitedAKQPct || "0.0%"),
+            suitedAKQJPct: String(rest.suitedAKQJPct || "0.0%"),
+            threePlusAcesPct: String(rest.threePlusAcesPct || "0.0%"),
+          };
+        };
+        const stripTotals = (t) => {
+          if (!t) return t;
+          const { totalDurationSec: _o1, avgDurationSec: _o2, totalDPW: _o3,
+                  totalDuration: _o4, avgDuration: _o5, resultText: _o6,
+                  profitabilityRate, ...rest } = t;
+          return { ...rest, gameProfitabilityPct: String(profitabilityRate || "0.0%") };
+        };
+        const opponentsForLlm = {};
+        for (const [pid, opponent] of Object.entries(state.opponentHandStats || {})) {
+          opponentsForLlm[pid] = {
+            ...opponent,
+            stats: stripStats(opponent.stats),
+            gameTotals: stripTotals(opponent.gameTotals),
+          };
+        }
+        const res = await fetch("api/analysis", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            player_name: user?.player_name || userId,
+            stats: stripStats(state.handStats),
+            gameTotals: stripTotals(buildTotals(state.games)),
+            opponents: opponentsForLlm,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+        state.analysisByUser[userId] = String(data?.text || "").trim();
+      } catch (err) {
+        state.analysisErrorFor = userId;
+        state.analysisError = String(err?.message || err || "Failed to generate analysis.");
+      } finally {
+        if (state.analysisLoadingFor === userId) state.analysisLoadingFor = null;
+        renderMain();
       }
     }
 
@@ -1306,8 +1684,21 @@
 
     function renderUsers() {
       const usersEl = document.getElementById("users");
+      const compareToggle = document.getElementById("compare-toggle");
+      if (compareToggle) {
+        compareToggle.classList.toggle("is-active", state.comparisonMode);
+        compareToggle.textContent = "Overview";
+      }
       usersEl.innerHTML = state.users.map(u => {
         const mmrText = String(u.total_mmr);
+        if (state.comparisonMode) {
+          return `
+          <div class="list-item" data-user-id="${esc(u.player_id)}">
+            <div class="name">${esc(u.player_name)}</div>
+            <div class="meta">MMR: <span class="${scoreClass(mmrText)}">${esc(mmrText)}</span></div>
+          </div>
+          `;
+        }
         return `
         <div class="list-item ${u.player_id === state.selectedUserId ? "active" : ""}" data-user-id="${esc(u.player_id)}">
           <div class="name">${esc(u.player_name)}</div>
@@ -1316,7 +1707,22 @@
         `;
       }).join("");
       usersEl.querySelectorAll("[data-user-id]").forEach(el => {
-        el.addEventListener("click", async () => {
+        el.addEventListener("click", async (e) => {
+          if (state.comparisonMode) {
+            e.preventDefault();
+            state.selectedUserId = el.dataset.userId;
+            state.selectedGameId = null;
+            state.selectedGameDisplayId = null;
+            state.gameDetails = null;
+            state.gameDetailsMessage = "";
+            resetHandStats();
+            exitComparisonMode();
+            await loadGames();
+            saveViewState();
+            render();
+            loadHandStatsIfNeeded().catch(() => {});
+            return;
+          }
           state.selectedUserId = el.dataset.userId;
           state.selectedGameId = null;
           state.selectedGameDisplayId = null;
@@ -1329,6 +1735,30 @@
           loadHandStatsIfNeeded().catch(() => {});
         });
       });
+    }
+
+    function enterComparisonMode() {
+      state.comparisonMode = true;
+      state.comparisonSelectedUserIds = state.users.map(u => u.player_id);
+      state.comparisonData = null;
+      state.comparisonError = "";
+      state.comparisonCacheKey = "";
+      saveViewState();
+      render();
+    }
+
+    function exitComparisonMode() {
+      state.comparisonMode = false;
+      state.comparisonData = null;
+      state.comparisonError = "";
+      state.comparisonCacheKey = "";
+      saveViewState();
+      render();
+      const mainEl = document.querySelector("main.main");
+      if (mainEl) {
+        mainEl.scrollTop = 0;
+      }
+      window.scrollTo(0, 0);
     }
 
     function dealRows(deal) {
@@ -1498,8 +1928,15 @@
       const totalGames = games.length;
       const totalWins = games.filter(g => Number(g.mmr || 0) > 0).length;
       const totalLosses = games.filter(g => Number(g.mmr || 0) < 0).length;
-      const denom = totalWins + totalLosses;
-      const winRate = denom > 0 ? Math.floor((totalWins / denom) * 100) : 0;
+      const totalPositiveMmr = games.reduce((acc, g) => {
+        const mmr = Number(g.mmr || 0);
+        return acc + (mmr > 0 ? mmr : 0);
+      }, 0);
+      const totalNegativeAbsMmr = games.reduce((acc, g) => {
+        const mmr = Number(g.mmr || 0);
+        return acc + (mmr < 0 ? Math.abs(mmr) : 0);
+      }, 0);
+      const profitabilityRate = profitabilityRateText(totalPositiveMmr, totalNegativeAbsMmr);
       const totalMmr = games.reduce((acc, g) => acc + Number(g.mmr || 0), 0);
       const totalPool = games.reduce((acc, g) => acc + Number(g.pool || 0), 0);
       const totalDump = games.reduce((acc, g) => acc + Number(g.dump || 0), 0);
@@ -1508,17 +1945,17 @@
       const avgDurationSec = totalGames > 0 ? Math.round(totalDurationSec / totalGames) : 0;
       return {
         totalGames,
-        winRate,
+        profitabilityRate,
         totalMmr,
         totalPool,
         totalDump,
         totalWhists,
         totalDurationSec,
         avgDurationSec,
-        totalDPW: `${totalDump}/${totalPool}/${totalWhists}`,
+        totalDPW: `${formatCompactNumber(totalDump).replace("k", "")}/${formatCompactNumber(totalPool).replace("k", "")}/${formatCompactNumber(totalWhists)}`,
         totalDuration: formatDuration(totalDurationSec),
         avgDuration: formatDuration(avgDurationSec),
-        resultText: `${winRate}% WIN RATE`,
+        resultText: `${profitabilityRate} PROFITABILITY RATE`,
       };
     }
 
@@ -1726,6 +2163,15 @@
       };
     }
 
+    function profitabilityClass(text) {
+      const match = String(text ?? "").match(/(-?\d+(?:\.\d+)?)\s*%/);
+      if (!match) return "";
+      const value = Number.parseFloat(match[1]);
+      if (value > 50) return "score-good";
+      if (value < 50) return "score-bad";
+      return "score-even";
+    }
+
     function scoreClass(cell) {
       const text = String(cell ?? "").trim();
       const goodWinrate = 51;
@@ -1783,7 +2229,7 @@
 
     function showStatTooltip(text, e) {
       if (!statTooltipEl || !text) return;
-      statTooltipEl.textContent = text;
+      statTooltipEl.innerHTML = renderMarkdown(text);
       statTooltipEl.style.display = "block";
       moveStatTooltip(e);
     }
@@ -1880,12 +2326,276 @@
       return `${total} • <span class="score-good">${positive}</span> • <span class="score-bad">${negative}</span> • <span class="${scoreClass(formatSignedInteger(totalMmr))}">${formatSignedInteger(totalMmr)}</span><span class="mmr-suffix"> MMR</span>`;
     }
 
+    async function loadComparisonIfNeeded() {
+      const ids = state.users.map(u => u.player_id);
+      state.comparisonSelectedUserIds = [...ids];
+      if (ids.length < 2) {
+        state.comparisonData = null;
+        state.comparisonCacheKey = "";
+        return;
+      }
+      const cacheKey = `cmp:${[...ids].sort().join(",")}:${lastDataVersion || 0}`;
+      if (state.comparisonCacheKey === cacheKey || state.comparisonLoading) return;
+      state.comparisonLoading = true;
+      state.comparisonError = "";
+      renderMain();
+      const idsAtStart = ids.join("|");
+      try {
+        const fetchWithTimeout = (path, ms) => new Promise(resolve => {
+          let done = false;
+          const timer = setTimeout(() => { if (!done) { done = true; resolve(null); } }, ms);
+          api(path).then(v => { if (!done) { done = true; clearTimeout(timer); resolve(v); } })
+                   .catch(() => { if (!done) { done = true; clearTimeout(timer); resolve(null); } });
+        });
+        const gamesLists = await Promise.all(
+          ids.map(pid => fetchWithTimeout(`api/users/${encodeURIComponent(pid)}/games`, 15000))
+        );
+        if (!state.comparisonMode || state.users.map(u => u.player_id).join("|") !== idsAtStart) return;
+        const uniqueGameIds = new Set();
+        gamesLists.forEach(list => {
+          (Array.isArray(list) ? list : []).forEach(g => uniqueGameIds.add(Number(g.id)));
+        });
+        const details = await Promise.all(
+          [...uniqueGameIds].map(id => fetchWithTimeout(`api/games/${id}`, 15000))
+        );
+        if (!state.comparisonMode || state.users.map(u => u.player_id).join("|") !== idsAtStart) return;
+        const validDetails = details.filter(Boolean);
+        const byUser = {};
+        ids.forEach((pid, i) => {
+          const user = state.users.find(u => u.player_id === pid);
+          const games = Array.isArray(gamesLists[i]) ? gamesLists[i] : [];
+          byUser[pid] = {
+            user,
+            games,
+            stats: computeHandStatsForPlayer(pid, validDetails),
+            totals: buildTotals(games),
+          };
+        });
+        state.comparisonData = { byUser, userIds: [...ids] };
+        state.comparisonCacheKey = cacheKey;
+      } catch (err) {
+        state.comparisonError = String(err?.message || err || "Failed to load group view.");
+      } finally {
+        state.comparisonLoading = false;
+        if (state.comparisonMode && state.users.map(u => u.player_id).join("|") === idsAtStart) renderMain();
+      }
+    }
+
+    function comparisonRowDefs() {
+      const pctNum = (s) => {
+        const m = String(s ?? "").match(/(-?\d+(?:\.\d+)?)/);
+        return m ? parseFloat(m[1]) : 0;
+      };
+      const signed = (v) => `${v > 0 ? "+" : ""}${v}`;
+      const mmrCell = (v) => `<span class="${scoreClass(String(v))}">${signed(v)}</span>`;
+      const pctCell = (s) => `<span class="${profitabilityClass(s)}">${esc(s)}</span>`;
+      const splitCell = (cat) => {
+        const c = cat || { count: 0, positive: 0, negative: 0, mmrSum: 0 };
+        const mmr = Number(c.mmrSum || 0);
+        return `${c.count} • <span class="score-good">${c.positive}</span> • <span class="score-bad">${c.negative}</span> • <span class="${scoreClass(String(mmr))}">${signed(mmr)}</span>`;
+      };
+      const splitTip = "Total deals • positive • negative • total MMR.";
+      const profitTip = "Profitability rate: positive MMR divided by absolute MMR.";
+      const passFamilyTip = "Percentage of deals passed.";
+      const whistFamilyTip = "Percentage of deals played as whist/half-whist.";
+      const declarerFamilyTip = "Percentage of deals played as declarer.";
+      const allPassFamilyTip = "Percentage of deals where all players passed.";
+      const miserFamilyTip = "Number of deals played as misère.\n↑ - profitability rate for those deals: positive MMR divided by absolute MMR.";
+      return [
+        { section: "Games" },
+        { label: "Games", tip: "Total number of games.", value: d => d.totals.totalGames, text: d => String(d.totals.totalGames), better: "higher" },
+        { label: "Total MMR", tip: "Net MMR change.", value: d => d.totals.totalMmr, text: d => mmrCell(d.totals.totalMmr), better: "higher" },
+        { label: "Profitability", tip: profitTip, value: d => pctNum(d.totals.profitabilityRate), text: d => pctCell(d.totals.profitabilityRate), better: "higher" },
+        { label: "D/P/W", tip: "Total dump/pool/whist across all games.", text: d => `${d.totals.totalDump}/${d.totals.totalPool}/${d.totals.totalWhists}` },
+        { label: "Total Dur.", tip: "Combined duration of all games.", text: d => esc(d.totals.totalDuration) },
+        { label: "Avg Dur.", tip: "Average duration per game.", text: d => esc(d.totals.avgDuration) },
+        { section: "Deals" },
+        { label: "Deals", tip: "Total deals • positive • negative • total MMR.", value: d => d.stats.handsCount, text: d => `${d.stats.handsCount} • <span class="score-good">${d.stats.dealsPositive}</span> • <span class="score-bad">${d.stats.dealsNegative}</span> • ${mmrCell(d.stats.dealsMmrSum)}`, better: "higher" },
+        { section: "Decisions" },
+        { label: "Pass %", tip: passFamilyTip, text: d => esc(d.stats.passRatePct) },
+        { label: "Pass Profit.", tip: profitTip, value: d => pctNum(d.stats.passMadePct), text: d => pctCell(d.stats.passMadePct), better: "higher" },
+        { label: "Pass Deals", tip: splitTip, text: d => splitCell(d.stats.passCategory) },
+        { label: "Whist %", tip: whistFamilyTip, text: d => esc(d.stats.whistRatePct) },
+        { label: "Whist Profit.", tip: profitTip, value: d => pctNum(d.stats.whistMadePct), text: d => pctCell(d.stats.whistMadePct), better: "higher" },
+        { label: "Whist Deals", tip: splitTip, text: d => splitCell(d.stats.whistCategory) },
+        { label: "Declarer %", tip: declarerFamilyTip, text: d => esc(d.stats.declarerPct) },
+        { label: "Declarer Profit.", tip: profitTip, value: d => pctNum(d.stats.declarerMadePct), text: d => pctCell(d.stats.declarerMadePct), better: "higher" },
+        { label: "Declarer Deals", tip: splitTip, text: d => splitCell(d.stats.declarerCategory) },
+        { label: "All Pass %", tip: allPassFamilyTip, text: d => esc(d.stats.passingRatePct) },
+        { label: "All Pass Profit.", tip: profitTip, value: d => pctNum(d.stats.passingMadePct), text: d => pctCell(d.stats.passingMadePct), better: "higher" },
+        { label: "All Pass Deals", tip: splitTip, text: d => splitCell(d.stats.passingCategory) },
+        { label: "All Pass 0 Tricks %", tip: "Percentage of All Pass deals played with 0 tricks.", text: d => esc(d.stats.passingZeroTricksPct) },
+        { label: "All Pass 0 Tricks Deals", tip: splitTip, text: d => splitCell(d.stats.passingZeroCategory) },
+        { label: "Misère Deals", tip: "Number of deals played as misère.", text: d => String(d.stats.miserCount) },
+        { label: "Misère Profit.", tip: profitTip, value: d => pctNum(d.stats.miserMadePct), text: d => pctCell(d.stats.miserMadePct), better: "higher" },
+        { label: "Misère Split", tip: splitTip, text: d => splitCell(d.stats.miserCategory) },
+        { label: "Declared 6/7/8/9/10", tip: "Number of deals declared as a 6/7/8/9/10 game.", text: d => `${d.stats.declared6Count}/${d.stats.declared7Count}/${d.stats.declared8Count}/${d.stats.declared9Count}/${d.stats.declared10Count}` },
+        { section: "Hands" },
+        { label: "AKQ Suited %", tip: "Percentage of hands with at least one suited AKQ combination (e.g., A♠ K♠ Q♠).\nIn a uniformly random deal, the expected value is 9.54%.", text: d => {
+          const v = pctNum(d.stats.suitedAKQPct);
+          const delta = formatSignedPpDelta(v - 9.5385);
+          return `${esc(d.stats.suitedAKQPct)} <span class="${scoreClass(delta)}">${delta}</span>`;
+        } },
+        { label: "AKQ Suited Deals", tip: splitTip, text: d => splitCell(d.stats.suitedAKQCategory) },
+        { label: "AKQJ Suited %", tip: "Percentage of hands with at least one suited AKQJ combination (e.g., A♠ K♠ Q♠ J♠).\nIn a uniformly random deal, the expected value is 2.33%.", text: d => {
+          const v = pctNum(d.stats.suitedAKQJPct);
+          const delta = formatSignedPpDelta(v - 2.3334);
+          return `${esc(d.stats.suitedAKQJPct)} <span class="${scoreClass(delta)}">${delta}</span>`;
+        } },
+        { label: "AKQJ Suited Deals", tip: splitTip, text: d => splitCell(d.stats.suitedAKQJCategory) },
+        { label: "3+ Aces %", tip: "Percentage of hands with three or more aces (e.g., A♠ A♦ A♣).\nIn a uniformly random deal, the expected value is 7.93%.", text: d => {
+          const v = pctNum(d.stats.threePlusAcesPct);
+          const delta = formatSignedPpDelta(v - 7.9255);
+          return `${esc(d.stats.threePlusAcesPct)} <span class="${scoreClass(delta)}">${delta}</span>`;
+        } },
+        { label: "3+ Aces Deals", tip: splitTip, text: d => splitCell(d.stats.threePlusAcesCategory) },
+        { label: "Avg CP", tip: "Average Card Points\n(7=1, 8=2, 9=3, 10=4, J=5, Q=6, K=7, A=8).\nIn a uniformly random deal, the expected value is 45.", value: d => d.stats.avgCardPoints, text: d => {
+          const v = d.stats.avgCardPoints;
+          const delta = formatSignedDelta(v - 45);
+          return `${v.toFixed(2)} <span class="${scoreClass(delta)}">${delta}</span>`;
+        } },
+        { label: "Avg HCP", tip: "Average High Card Points\n(7-10=0, J=1, Q=2, K=3, A=4).\nIn a uniformly random deal, the expected value is 12.5.", value: d => d.stats.avgHcp, text: d => {
+          const v = d.stats.avgHcp;
+          const delta = formatSignedDelta(v - 12.5);
+          return `${v.toFixed(2)} <span class="${scoreClass(delta)}">${delta}</span>`;
+        } },
+        { label: "Avg Talon HCP", tip: "Average Talon High Card Points\n(7-10=0, J=1, Q=2, K=3, A=4).\nIn a uniformly random deal, the expected value is 2.5.", value: d => d.stats.avgDeclarerTalonHcp, text: d => {
+          const v = d.stats.avgDeclarerTalonHcp;
+          const delta = formatSignedDelta(v - 2.5);
+          return `${v.toFixed(2)} <span class="${scoreClass(delta)}">${delta}</span>`;
+        } },
+      ];
+    }
+
+    function renderComparisonView(content) {
+      const ids = state.users.map(u => u.player_id);
+      if (ids.length < 2) {
+        content.innerHTML = `
+          <div class="compare-view-header">
+            <button type="button" class="compare-close" data-action="compare-exit" aria-label="Exit overview" title="Exit overview">⬅</button>
+            <div class="compare-empty compare-empty-inline">At least 2 players are needed to show the overview.</div>
+          </div>
+        `;
+        wireComparisonHandlers(content);
+        return;
+      }
+      if (state.comparisonLoading && !state.comparisonData) {
+        content.innerHTML = `
+          <div class="compare-view-header">
+            <button type="button" class="compare-close" data-action="compare-exit" aria-label="Exit overview" title="Exit overview">⬅</button>
+            <div class="compare-empty compare-empty-inline">Loading group view...</div>
+          </div>
+        `;
+        wireComparisonHandlers(content);
+        return;
+      }
+      if (state.comparisonError) {
+        content.innerHTML = `
+          <div class="compare-view-header">
+            <button type="button" class="compare-close" data-action="compare-exit" aria-label="Exit overview" title="Exit overview">⬅</button>
+            <div class="compare-empty compare-empty-inline">${esc(state.comparisonError)}</div>
+          </div>
+        `;
+        wireComparisonHandlers(content);
+        return;
+      }
+      const data = state.comparisonData;
+      if (!data) {
+        content.innerHTML = `
+          <div class="compare-view-header">
+            <button type="button" class="compare-close" data-action="compare-exit" aria-label="Exit overview" title="Exit overview">⬅</button>
+            <div class="compare-empty compare-empty-inline">Loading group view...</div>
+          </div>
+        `;
+        wireComparisonHandlers(content);
+        return;
+      }
+      const orderedIds = [...data.userIds].sort((a, b) => {
+        const ma = Number(data.byUser[a]?.totals?.totalMmr ?? 0);
+        const mb = Number(data.byUser[b]?.totals?.totalMmr ?? 0);
+        return mb - ma;
+      });
+      const rows = comparisonRowDefs();
+      const headerCells = orderedIds.map(pid => {
+        const name = data.byUser[pid]?.user?.player_name || pid;
+        return `<th>${esc(name)}</th>`;
+      }).join("");
+      const bodyRows = rows.map(row => {
+        if (row.section) {
+          return `<tr class="section-row"><td colspan="${orderedIds.length + 1}">${esc(row.section)}</td></tr>`;
+        }
+        const cells = orderedIds.map(pid => {
+          const d = data.byUser[pid];
+          let cellText = "-";
+          try { cellText = row.text ? row.text(d) : "-"; } catch { cellText = "-"; }
+          let cls = "";
+          const allClasses = String(cellText).match(/score-(good|bad|mid)/g) || [];
+          const last = allClasses[allClasses.length - 1];
+          if (last === "score-good") cls = "compare-best";
+          else if (last === "score-bad") cls = "compare-worst";
+          else if (last === "score-mid") cls = "compare-mid";
+          return `<td class="${cls}">${cellText}</td>`;
+        }).join("");
+        const tipAttr = row.tip ? ` data-tip="${esc(row.tip)}"` : "";
+        return `<tr${tipAttr}><td class="stat-label">${esc(row.label)}</td>${cells}</tr>`;
+      }).join("");
+      content.innerHTML = `
+        <div class="compare-title-row">
+          <h2 class="compare-title">Overview</h2>
+          <button type="button" class="compare-close compare-floating-close" data-action="compare-exit" aria-label="Exit overview" title="Exit overview">⬅</button>
+        </div>
+        <div class="compare-table-outer">
+          <div class="compare-table-wrap">
+            <table class="compare-table">
+              <thead>
+                <tr><th>Statistic</th>${headerCells}</tr>
+              </thead>
+              <tbody>${bodyRows}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+      wireComparisonHandlers(content);
+    }
+
+    function wireComparisonHandlers(content) {
+      content.querySelectorAll("[data-action='compare-exit']").forEach(el => {
+        el.addEventListener("click", () => exitComparisonMode());
+      });
+      content.querySelectorAll("[data-tip]").forEach(el => {
+        el.addEventListener("mouseenter", e => showStatTooltip(el.dataset.tip || "", e));
+        el.addEventListener("mousemove", moveStatTooltip);
+        el.addEventListener("mouseleave", hideStatTooltip);
+      });
+    }
+
+    function updateOverviewFloatingButton() {
+      const btn = document.querySelector(".compare-close.compare-floating-close");
+      const content = document.getElementById("content");
+      if (!btn || !content) return;
+      const rect = content.getBoundingClientRect();
+      btn.style.left = `${Math.round(rect.left + 24)}px`;
+      btn.style.top = `${Math.round(Math.max(rect.top + 24, 24))}px`;
+    }
+
     function renderMain() {
       const content = document.getElementById("content");
       const mainEl = document.querySelector("main.main");
       const prevMainScrollTop = mainEl ? mainEl.scrollTop : 0;
       const prevGamesScrollTop = content.querySelector(".games-table-wrap")?.scrollTop ?? 0;
       const prevFilteredScrollTop = content.querySelector(".filtered-table-wrap")?.scrollTop ?? 0;
+      if (state.comparisonMode) {
+        renderComparisonView(content);
+        const overviewIds = state.users.map(u => u.player_id);
+        if (overviewIds.length >= 2
+            && !state.comparisonLoading
+            && state.comparisonCacheKey !== `cmp:${[...overviewIds].sort().join(",")}:${lastDataVersion || 0}`) {
+          loadComparisonIfNeeded().catch(() => {});
+        }
+        if (mainEl) mainEl.scrollTop = prevMainScrollTop;
+        updateOverviewFloatingButton();
+        return;
+      }
       if (!state.selectedUserId) {
         content.innerHTML = `<div class="empty">Select a user to view games and deals.</div>`;
         return;
@@ -1906,9 +2616,23 @@
         loadHandStatsIfNeeded().catch(() => {});
       }
 
+      const analysisInline = (state.handStats && state.handStats.handsCount > 0) ? (() => {
+        const userId = state.selectedUserId;
+        const analysisText = state.analysisByUser[userId];
+        const isLoading = state.analysisLoadingFor === userId;
+        const hasError = state.analysisErrorFor === userId;
+        if (!analysisText && !isLoading && !hasError) {
+          queueMicrotask(() => { generatePlayerAnalysis().catch(() => {}); });
+        }
+        if (hasError) return "";
+        const collapsed = state.analysisCollapsed;
+        const aiBadge = `<span class="muted" style="font-size:0.75em;text-transform:uppercase;letter-spacing:0.05em;opacity:0.6;margin-right:4px;" title="Generated by a large language model from this player's statistics.">AI</span>`;
+        const inner = collapsed ? `<span class="muted" style="font-size:0.75em;text-transform:uppercase;letter-spacing:0.05em;opacity:0.6;">AI</span>` : (analysisText ? `${aiBadge}<span class="analysis-body">${esc(analysisText.replace(/\s+/g, " ").trim())}</span>` : (isLoading ? `<span class="muted">Generating player analysis with AI...</span>` : ""));
+        return `<div class="player-analysis-inline" style="flex:1;min-width:0;display:flex;align-items:baseline;gap:6px;line-height:1.3;font-weight:normal;opacity:0.85;"><button type="button" data-action="toggle-analysis" title="${collapsed ? "Show" : "Hide"} analysis" style="background:none;border:none;color:inherit;cursor:pointer;font-size:1em;padding:0;line-height:1;">${collapsed ? "▸" : "▾"}</button><div style="flex:1;min-width:0;">${inner}</div></div>`;
+      })() : "";
       const gamesTable = `
         <div class="games-block">
-          <div class="user-header"><button id="sidebar-toggle-inline" class="sidebar-toggle" type="button" aria-label="Toggle sidebar" title="Toggle sidebar">☰</button><h2 class="clearable" data-action="clear-main-selection" title="Clear selected game and stat filters">${esc(user.player_name)}</h2></div>
+          <div class="user-header"><button id="sidebar-toggle-inline" class="sidebar-toggle" type="button" aria-label="Toggle sidebar" title="Toggle sidebar">☰</button><h2 class="clearable" data-action="clear-main-selection" title="Clear selected game and stat filters">${esc(user.player_name)}</h2>${analysisInline}</div>
           <div class="summary-cards">
             <div class="summary-card" data-tip="Total number of games.">
               <div class="summary-label">Games</div>
@@ -1922,21 +2646,21 @@
               <div class="summary-label">MMR</div>
               <div class="summary-value ${scoreClass(String(totals.totalMmr))}">${totals.totalMmr}</div>
             </div>
-            <div class="summary-card" data-tip="Percentage of games with a positive MMR change.">
-              <div class="summary-label">Win Rate</div>
-              <div class="summary-value ${scoreClass(totals.resultText)}">${totals.winRate}%</div>
+            <div class="summary-card" data-tip="Profitability rate: positive MMR divided by absolute MMR.">
+              <div class="summary-label">Profitability</div>
+              <div class="summary-value ${profitabilityClass(totals.profitabilityRate)}">${totals.profitabilityRate}</div>
             </div>
-            <div class="summary-card ${state.activeHandFilter === "passing" ? "is-active" : ""}" data-action="filter-passing" data-tip="Percentage of deals where all players passed.&#10;↑ - percentage of those deals with positive MMR.">
+            <div class="summary-card ${state.activeHandFilter === "passing" ? "is-active" : ""}" data-action="filter-passing" data-tip="Percentage of deals where all players passed.&#10;↑ - profitability rate for those deals: positive MMR divided by absolute MMR.">
               <div class="summary-label">All Pass</div>
-              <div class="summary-value">${state.handStatsLoading ? "..." : (state.handStats ? state.handStats.passingRatePct : "-")}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats?.passingMadePct || "")}">${state.handStats ? state.handStats.passingMadePct : "-"}</span></span></div>
+              <div class="summary-value">${state.handStatsLoading ? "..." : (state.handStats ? state.handStats.passingRatePct : "-")}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${profitabilityClass(state.handStats?.passingMadePct || "")}">${state.handStats ? state.handStats.passingMadePct : "-"}</span></span></div>
             </div>
-            <div class="summary-card ${state.activeHandFilter === "passingZero" ? "is-active" : ""}" data-action="filter-passing-zero" data-tip="Percentage of All Pass deals where this player took 0 tricks.">
-              <div class="summary-label">All Pass (0 Tricks)</div>
+            <div class="summary-card ${state.activeHandFilter === "passingZero" ? "is-active" : ""}" data-action="filter-passing-zero" data-tip="Percentage of All Pass deals played with 0 tricks.">
+              <div class="summary-label">0 Tricks</div>
               <div class="summary-value">${state.handStatsLoading ? "..." : (state.handStats ? state.handStats.passingZeroTricksPct : "-")}</div>
             </div>
-            <div class="summary-card ${state.activeHandFilter === "miser" ? "is-active" : ""}" data-action="filter-miser" data-tip="Number of deals played as misère.&#10;↑ - percentage of those deals with positive MMR.">
+            <div class="summary-card ${state.activeHandFilter === "miser" ? "is-active" : ""}" data-action="filter-miser" data-tip="Number of deals played as misère.&#10;↑ - profitability rate for those deals: positive MMR divided by absolute MMR.">
               <div class="summary-label">Misère</div>
-              <div class="summary-value">${state.handStatsLoading ? "..." : (state.handStats ? state.handStats.miserCount : "-")}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats?.miserMadePct || "")}">${state.handStats ? state.handStats.miserMadePct : "-"}</span></span></div>
+              <div class="summary-value">${state.handStatsLoading ? "..." : (state.handStats ? state.handStats.miserCount : "-")}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${profitabilityClass(state.handStats?.miserMadePct || "")}">${state.handStats ? state.handStats.miserMadePct : "-"}</span></span></div>
             </div>
             <div class="summary-card" data-tip="Total dump/pool/whist across all games.">
               <div class="summary-label">D/P/W</div>
@@ -1960,10 +2684,10 @@
                   ? `<div class="empty">No hands found for this user.</div>`
                   : `
                     <div class="hand-stats-grid">
-                      <div class="hand-stat-card ${state.activeHandFilter === "declarer" ? "is-active" : ""}" data-action="filter-declarer" data-tip="Percentage of deals played as declarer.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Declarer</div><div class="hand-stat-value">${state.handStats.declarerPct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.declarerMadePct)}">${state.handStats.declarerMadePct}</span></span></div></div>
+                      <div class="hand-stat-card ${state.activeHandFilter === "pass" ? "is-active" : ""}" data-action="filter-pass" data-tip="Percentage of deals passed.&#10;↑ - profitability rate for those deals: positive MMR divided by absolute MMR."><div class="hand-stat-label">Pass</div><div class="hand-stat-value">${state.handStats.passRatePct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${profitabilityClass(state.handStats.passMadePct)}">${state.handStats.passMadePct}</span></span></div></div>
+                      <div class="hand-stat-card ${state.activeHandFilter === "whist" ? "is-active" : ""}" data-action="filter-whist" data-tip="Percentage of deals played as whist/half-whist.&#10;↑ - profitability rate for those deals: positive MMR divided by absolute MMR."><div class="hand-stat-label">Whist</div><div class="hand-stat-value">${state.handStats.whistRatePct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${profitabilityClass(state.handStats.whistMadePct)}">${state.handStats.whistMadePct}</span></span></div></div>
+                      <div class="hand-stat-card ${state.activeHandFilter === "declarer" ? "is-active" : ""}" data-action="filter-declarer" data-tip="Percentage of deals played as declarer.&#10;↑ - profitability rate for those deals: positive MMR divided by absolute MMR."><div class="hand-stat-label">Declarer</div><div class="hand-stat-value">${state.handStats.declarerPct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${profitabilityClass(state.handStats.declarerMadePct)}">${state.handStats.declarerMadePct}</span></span></div></div>
                       <div class="hand-stat-card" data-tip="Number of deals declared as a 6/7/8/9/10 game."><div class="hand-stat-label">Declared 6/7/8/9/10</div><div class="hand-stat-value">${state.handStats.declared6Count}/${state.handStats.declared7Count}/${state.handStats.declared8Count}/${state.handStats.declared9Count}/${state.handStats.declared10Count}</div></div>
-                      <div class="hand-stat-card ${state.activeHandFilter === "pass" ? "is-active" : ""}" data-action="filter-pass" data-tip="Percentage of deals passed.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Pass</div><div class="hand-stat-value">${state.handStats.passRatePct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.passMadePct)}">${state.handStats.passMadePct}</span></span></div></div>
-                      <div class="hand-stat-card ${state.activeHandFilter === "whist" ? "is-active" : ""}" data-action="filter-whist" data-tip="Percentage of deals played as whist/half-whist.&#10;↑ - percentage of those deals with positive MMR."><div class="hand-stat-label">Whist</div><div class="hand-stat-value">${state.handStats.whistRatePct}<span class="hand-stat-delta"><span class="hand-stat-prefix">↑ </span><span class="${scoreClass(state.handStats.whistMadePct)}">${state.handStats.whistMadePct}</span></span></div></div>
                       <div class="hand-stat-card ${state.activeHandFilter === "akq" ? "is-active" : ""}" data-action="filter-akq" data-tip="Percentage of hands with at least one suited AKQ combination (e.g., A♠ K♠ Q♠).&#10;In a uniformly random deal, the expected value is 9.54%."><div class="hand-stat-label">AKQ Suited</div><div class="hand-stat-value">${state.handStats.suitedAKQPct}<span class="hand-stat-delta ${scoreClass(formatSignedPpDelta(state.handStats.suitedAKQRate - 9.5385))}">${formatSignedPpDelta(state.handStats.suitedAKQRate - 9.5385)}</span></div></div>
                       <div class="hand-stat-card ${state.activeHandFilter === "akqj" ? "is-active" : ""}" data-action="filter-akqj" data-tip="Percentage of hands with at least one suited AKQJ combination (e.g., A♠ K♠ Q♠ J♠).&#10;In a uniformly random deal, the expected value is 2.33%."><div class="hand-stat-label">AKQJ Suited</div><div class="hand-stat-value">${state.handStats.suitedAKQJPct}<span class="hand-stat-delta ${scoreClass(formatSignedPpDelta(state.handStats.suitedAKQJRate - 2.3334))}">${formatSignedPpDelta(state.handStats.suitedAKQJRate - 2.3334)}</span></div></div>
                       <div class="hand-stat-card ${state.activeHandFilter === "aces3" ? "is-active" : ""}" data-action="filter-aces3" data-tip="Percentage of hands with three or more aces (e.g., A♠ A♦ A♣).&#10;In a uniformly random deal, the expected value is 7.93%."><div class="hand-stat-label">3+ Aces</div><div class="hand-stat-value">${state.handStats.threePlusAcesPct}<span class="hand-stat-delta ${scoreClass(formatSignedPpDelta(state.handStats.threePlusAcesRate - 7.9255))}">${formatSignedPpDelta(state.handStats.threePlusAcesRate - 7.9255)}</span></div></div>
@@ -2264,6 +2988,13 @@
           renderMain();
         });
       });
+      content.querySelectorAll("[data-action='toggle-analysis']").forEach(el => {
+        el.addEventListener("click", () => {
+          state.analysisCollapsed = !state.analysisCollapsed;
+          saveViewState();
+          renderMain();
+        });
+      });
       content.querySelectorAll("[data-action='clear-main-selection']").forEach(el => {
         el.addEventListener("click", () => {
           state.selectedGameId = null;
@@ -2368,6 +3099,11 @@
       if (refreshInFlight) return;
       refreshInFlight = true;
       try {
+        const currentVersion = await fetchDataVersion();
+        if (currentVersion !== null && currentVersion === lastDataVersion) {
+          return;
+        }
+        if (currentVersion !== null) lastDataVersion = currentVersion;
         await loadUsers();
         if (state.selectedUserId && !state.users.some(u => u.player_id === state.selectedUserId)) {
           state.selectedUserId = null;
@@ -2424,6 +3160,7 @@
           if (scrollTopButton) {
             scrollTopButton.hidden = scrollTop <= 4;
           }
+          updateOverviewFloatingButton();
         };
         const appEl = document.getElementById("app");
         const SIDEBAR_HIDDEN_KEY = "prefbuff_sidebar_hidden";
@@ -2439,6 +3176,10 @@
         });
         if (appTitle) {
           appTitle.addEventListener("click", () => {
+            if (state.comparisonMode) {
+              exitComparisonMode();
+              return;
+            }
             state.selectedUserId = null;
             state.selectedGameId = null;
             state.selectedGameDisplayId = null;
@@ -2446,6 +3187,13 @@
             state.gameDetailsMessage = "";
             saveViewState();
             render();
+          });
+        }
+        const compareToggleBtn = document.getElementById("compare-toggle");
+        if (compareToggleBtn) {
+          compareToggleBtn.addEventListener("click", () => {
+            if (state.comparisonMode) exitComparisonMode();
+            else enterComparisonMode();
           });
         }
         if (scrollTopButton) {
@@ -2499,6 +3247,7 @@
         saveViewState();
         render();
         updateScrollTopButton();
+        lastDataVersion = await fetchDataVersion();
         startAutoRefresh();
       } catch (err) {
         document.getElementById("content").innerHTML =
