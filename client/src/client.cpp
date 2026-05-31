@@ -124,6 +124,9 @@ enum class Shift : std::uint8_t {
 }
 
 constexpr auto CardMotionPixelsPerSecond = 1500.0;
+constexpr auto TricksTakenAnimationDurationMs = 360.0;
+constexpr auto TricksTakenAnimationDelayFraction = 0.65;
+constexpr auto LastTrickOrTalonFlipDurationMs = TricksTakenAnimationDurationMs;
 
 [[nodiscard]] auto cardMotionDurationMs(const double distancePx) -> double
 {
@@ -287,6 +290,25 @@ template<typename Projection = std::identity>
     return std::ssize(r | rng::to<std::set<std::string_view>>()) == rng::distance(r);
 }
 
+struct TricksTakenAnimation {
+    enum class Axis {
+        Vertical,
+    };
+
+    int from{};
+    int to{};
+    double startedAt{};
+    double durationMs{};
+    Axis axis = Axis::Vertical;
+};
+
+struct LastTrickOrTalonTransition {
+    std::vector<CardNameView> from;
+    std::vector<CardNameView> to;
+    double startedAt{};
+    double durationMs{};
+};
+
 struct Player {
     Player() = default;
     Player(PlayerId i, PlayerName n)
@@ -307,6 +329,7 @@ struct Player {
         whistingChoice.clear();
         howToPlayChoice.clear();
         bid.clear();
+        tricksTakenAnimation.reset();
         tricksTaken = 0;
         playsOnBehalfOf.clear();
         offer = Offer::NO_OFFER;
@@ -320,6 +343,7 @@ struct Player {
     std::string whistingChoice;
     std::string howToPlayChoice;
     PlayerId playsOnBehalfOf;
+    std::optional<TricksTakenAnimation> tricksTakenAnimation;
     int tricksTaken{};
     int totalMmr{};
     ReadyCheckState readyCheckState = ReadyCheckState::NOT_REQUESTED;
@@ -921,6 +945,10 @@ struct Context {
     int rightCardCount = 10;
     std::map<PlayerId, const Card*> cardsOnTable;
     std::vector<CardNameView> lastTrickOrTalon;
+    double lastTrickOrTalonRevealStartedAt = 0.0;
+    std::optional<LastTrickOrTalonTransition> lastTrickOrTalonTransition;
+    std::vector<CardNameView> pendingLastTrickOrTalon;
+    double pendingLastTrickOrTalonAt = 0.0;
     std::vector<CardNameView> pendingTalonReveal;
     double pendingTalonRevealUntil = 0.0;
     double pendingTalonRevealStartedAt = 0.0;
@@ -979,6 +1007,10 @@ struct Context {
         rightCardCount = 10;
         cardsOnTable.clear();
         lastTrickOrTalon.clear();
+        lastTrickOrTalonRevealStartedAt = 0.0;
+        lastTrickOrTalonTransition.reset();
+        pendingLastTrickOrTalon.clear();
+        pendingLastTrickOrTalonAt = 0.0;
         pendingTalonReveal.clear();
         pendingTalonRevealUntil = 0.0;
         pendingTalonRevealStartedAt = 0.0;
@@ -1107,6 +1139,9 @@ auto teardownAudioEngine() -> void;
 auto removeCardsFromHand(Player& player, const std::vector<CardNameView>& cardNames) -> void;
 auto handleTalonCardClick(std::list<const Card*>& hand) -> void;
 auto applyPendingTalonReveal() -> void;
+auto applyPendingLastTrickOrTalon() -> void;
+auto triggerLastTrickOrTalonReveal() -> void;
+auto setLastTrickOrTalon(std::vector<CardNameView> cards) -> void;
 
 auto playSound(std::optional<r::Sound>& sound) -> void
 {
@@ -1123,6 +1158,57 @@ auto stopSound(std::optional<r::Sound>& sound) -> void
 [[nodiscard]] auto players() -> decltype(auto)
 {
     return ctx().players | rv::values;
+}
+
+auto setPlayerTricksTaken(
+    const PlayerId& playerId,
+    const int tricksTaken,
+    const double delayMs = 0.0,
+    const TricksTakenAnimation::Axis axis = TricksTakenAnimation::Axis::Vertical) -> void
+{
+    auto& player = ctx().player(playerId);
+    if (tricksTaken > player.tricksTaken) {
+        player.tricksTakenAnimation = TricksTakenAnimation{
+            .from = player.tricksTaken,
+            .to = tricksTaken,
+            .startedAt = emscripten_get_now() + std::max(delayMs, 0.0),
+            .durationMs = TricksTakenAnimationDurationMs,
+            .axis = axis};
+    } else if (tricksTaken != player.tricksTaken) {
+        player.tricksTakenAnimation.reset();
+    }
+    player.tricksTaken = tricksTaken;
+}
+
+struct AnimatedTrickCounter {
+    std::string text;
+    float scaleX = 1.0f;
+    float scaleY = 1.0f;
+};
+
+[[nodiscard]] auto animatedTrickCounter(const Player& player) -> AnimatedTrickCounter
+{
+    auto& livePlayer = ctx().player(player.id);
+    if (!livePlayer.tricksTakenAnimation.has_value()) {
+        return {.text = livePlayer.tricksTaken != 0 ? fmt::format(" {}", prettifyNumber(livePlayer.tricksTaken)) : ""};
+    }
+    const auto& animation = *livePlayer.tricksTakenAnimation;
+    const auto progress
+        = static_cast<float>(std::clamp((emscripten_get_now() - animation.startedAt) / animation.durationMs, 0.0, 1.0));
+    if (progress >= 1.0f) {
+        livePlayer.tricksTakenAnimation.reset();
+        return {.text = livePlayer.tricksTaken != 0 ? fmt::format(" {}", prettifyNumber(livePlayer.tricksTaken)) : ""};
+    }
+    if (progress < 0.5f) {
+        const auto phaseProgress = easeInOutCubic(progress * 2.0f);
+        return {.text = animation.from != 0 ? fmt::format(" {}", prettifyNumber(animation.from)) : "",
+                .scaleX = 1.0f - phaseProgress,
+                .scaleY = 1.0f};
+    }
+    const auto phaseProgress = easeInOutCubic((progress - 0.5f) * 2.0f);
+    return {.text = animation.to != 0 ? fmt::format(" {}", prettifyNumber(animation.to)) : "",
+            .scaleX = phaseProgress,
+            .scaleY = 1.0f};
 }
 
 [[nodiscard]] auto loadFromLocalStorage(const std::string_view key) -> std::string
@@ -2191,6 +2277,33 @@ auto drawAnimatedMyDiscardHand([[maybe_unused]] Player& player, const float prog
     return {VirtualW * 0.5f - CardWidth * 0.5f, VirtualH + CardHeight * 0.2f};
 }
 
+[[nodiscard]] auto trickCollectionDurationMs(const PlayerId& winnerPlayerId, const Card* talonCard = nullptr) -> double
+{
+    if (std::empty(winnerPlayerId)) { return 0.0; }
+    const auto& slots = playSlots();
+    const auto target = trickCollectionTargetPosition(winnerPlayerId);
+    auto fromPositions = std::vector<r::Vector2>{};
+    auto toPositions = std::vector<r::Vector2>{};
+    if (ctx().cardsOnTable.contains(ctx().myPlayerId)) {
+        fromPositions.push_back(slots.bottom);
+        toPositions.push_back(target);
+    }
+    const auto [leftOpponentId, rightOpponentId] = getOpponentIds();
+    if (ctx().cardsOnTable.contains(leftOpponentId)) {
+        fromPositions.push_back(slots.left);
+        toPositions.push_back(target);
+    }
+    if (ctx().cardsOnTable.contains(rightOpponentId)) {
+        fromPositions.push_back(slots.right);
+        toPositions.push_back(target);
+    }
+    if (talonCard != nullptr) {
+        fromPositions.push_back(slots.top);
+        toPositions.push_back(target);
+    }
+    return groupedAnchorMotionDurationMs(fromPositions, toPositions);
+}
+
 auto finalizeTrickCollection() -> void
 {
     if (not std::empty(ctx().trickCollections)) { return; }
@@ -2332,13 +2445,15 @@ auto startPendingTalonTransfer() -> void
 auto finalizePendingTalonTransfer() -> void
 {
     if (std::empty(ctx().talonTransferCards) or isTalonTransferAnimating()) { return; }
+    auto nextLastTrickOrTalon = ctx().lastTrickOrTalon;
     for (const auto cardName : ctx().talonTransferCards) {
         const auto& card = getCard(cardName);
-        if (not rng::contains(ctx().lastTrickOrTalon, card.name)) { ctx().lastTrickOrTalon.push_back(card.name); }
+        if (not rng::contains(nextLastTrickOrTalon, card.name)) { nextLastTrickOrTalon.push_back(card.name); }
         if (ctx().talonTransferPlayerId == ctx().myPlayerId and not rng::contains(ctx().myPlayer().hand, &card)) {
             ctx().myPlayer().hand.emplace_back(&card);
         }
     }
+    setLastTrickOrTalon(std::move(nextLastTrickOrTalon));
     if (ctx().talonTransferPlayerId == ctx().myPlayerId) {
         ctx().myPlayer().sortCards();
     } else {
@@ -2996,7 +3111,17 @@ auto handleDealCards(const Message& msg) -> void
         && std::empty(ctx().cardsOnTable)
         && ctx().areAllPlayersJoined()
         && !player.hand.empty();
-    if (shouldAnimateInitialDeal) { startInitialDealAnimations(); }
+    if (shouldAnimateInitialDeal) {
+        if (ctx().isGameStarted) {
+            startInitialDealAnimations();
+        } else {
+            waitFor(3s, [] {
+                if (ctx().isGameStarted && ctx().areAllPlayersJoined() && !ctx().myPlayer().hand.empty()) {
+                    startInitialDealAnimations();
+                }
+            });
+        }
+    }
     if (shouldAnimateHandReveal) { startHandRevealAnimation(playerId); }
 }
 
@@ -3067,15 +3192,17 @@ auto handlePlayerTurn(const Message& msg) -> void
             }
         }
         applyPendingTalonReveal();
+        auto nextLastTrickOrTalon = ctx().lastTrickOrTalon;
         for (const auto& cardName : playerTurn->talon()) {
             const auto& card = getCard(cardName);
             // Note: On reconnection, the cards are already sent by DealCards, so they must not be inserted twice
             if (rng::contains(ctx().pendingTalonReveal, card.name) or rng::contains(ctx().talonTransferCards, card.name)) {
                 continue;
             }
-            if (not rng::contains(ctx().lastTrickOrTalon, card.name)) { ctx().lastTrickOrTalon.push_back(card.name); }
+            if (not rng::contains(nextLastTrickOrTalon, card.name)) { nextLastTrickOrTalon.push_back(card.name); }
             if (isMyTurn and not rng::contains(ctx().myPlayer().hand, &card)) { ctx().myPlayer().hand.emplace_back(&card); }
         }
+        setLastTrickOrTalon(std::move(nextLastTrickOrTalon));
         // TODO: Sorting should be skipped if no cards were added above
         if (isMyTurn) { ctx().myPlayer().sortCards(); }
         return;
@@ -3249,7 +3376,11 @@ auto handleGameState(const Message& msg) -> void
 {
     auto gameState = makeMethod<GameState>(msg);
     if (not gameState) { return; }
+    ctx().lastTrickOrTalonTransition.reset();
+    ctx().pendingLastTrickOrTalon.clear();
+    ctx().pendingLastTrickOrTalonAt = 0.0;
     ctx().lastTrickOrTalon.clear();
+    ctx().lastTrickOrTalonRevealStartedAt = 0.0;
     for (auto&& cardName : gameState->last_trick()) {
         PREF_DI(cardName);
         const auto& card = getCard(cardName);
@@ -3259,7 +3390,7 @@ auto handleGameState(const Message& msg) -> void
         const auto playerId = std::string{tricks.player_id()};
         auto&& tricksTaken = tricks.taken();
         PREF_DI(playerId, tricksTaken);
-        ctx().player(playerId).tricksTaken = tricksTaken;
+        setPlayerTricksTaken(playerId, tricksTaken);
     }
     const auto [leftOpponentId, rightOpponentId] = getOpponentIds();
     for (auto&& cardsLeft : gameState->cards_left()) {
@@ -3291,19 +3422,31 @@ auto handleTrickFinished(const Message& msg) -> void
             auto _ = gsl::finally([&] { delete trickFinished; });
             if (not ctx().isGameFreezed) { return; }
             auto winnerPlayerId = PlayerId{};
+            auto nextTricksTaken = std::vector<std::pair<PlayerId, int>>{};
+            nextTricksTaken.reserve(static_cast<std::size_t>(trickFinished->tricks_size()));
             for (auto&& tricks : trickFinished->tricks()) {
                 const auto playerId = std::string{tricks.player_id()};
                 auto&& tricksTaken = tricks.taken();
                 PREF_DI(playerId, tricksTaken);
                 if (ctx().player(playerId).tricksTaken != tricksTaken) { winnerPlayerId = playerId; }
-                ctx().player(playerId).tricksTaken = tricksTaken;
+                nextTricksTaken.emplace_back(playerId, tricksTaken);
             }
             ctx().showScoreSheetAfterTrickCollection = std::empty(ctx().myPlayer().hand);
             assert(std::size(ctx().cardsOnTable) == 3);
-            ctx().lastTrickOrTalon = ctx().cardsOnTable | rv::values | rv::transform(&Card::name) | rng::to_vector;
+            ctx().pendingLastTrickOrTalon = ctx().cardsOnTable | rv::values | rv::transform(&Card::name) | rng::to_vector;
             const auto collectedTalonCard = ctx().passGameTalon.pop();
-            if (collectedTalonCard != nullptr) { ctx().lastTrickOrTalon.push_back(collectedTalonCard->name); }
-            rng::sort(ctx().lastTrickOrTalon, cardLess());
+            if (collectedTalonCard != nullptr) { ctx().pendingLastTrickOrTalon.push_back(collectedTalonCard->name); }
+            rng::sort(ctx().pendingLastTrickOrTalon, cardLess());
+            const auto trickCounterDelayMs = trickCollectionDurationMs(winnerPlayerId, collectedTalonCard)
+                * TricksTakenAnimationDelayFraction;
+            ctx().pendingLastTrickOrTalonAt = emscripten_get_now() + trickCounterDelayMs;
+            for (const auto& [playerId, tricksTaken] : nextTricksTaken) {
+                setPlayerTricksTaken(
+                    playerId,
+                    tricksTaken,
+                    playerId == winnerPlayerId ? trickCounterDelayMs : 0.0,
+                    TricksTakenAnimation::Axis::Vertical);
+            }
             startTrickCollection(winnerPlayerId, collectedTalonCard);
         },
         new TrickFinished{*trickFinished});
@@ -3493,6 +3636,36 @@ auto applyPendingTalonReveal() -> void
     if (std::empty(ctx().pendingTalonReveal)) { return; }
     if (ctx().window.GetTime() < ctx().pendingTalonRevealUntil) { return; }
     startPendingTalonTransfer();
+}
+
+auto applyPendingLastTrickOrTalon() -> void
+{
+    if (std::empty(ctx().pendingLastTrickOrTalon)) { return; }
+    if (emscripten_get_now() < ctx().pendingLastTrickOrTalonAt) { return; }
+    setLastTrickOrTalon(std::move(ctx().pendingLastTrickOrTalon));
+    ctx().pendingLastTrickOrTalonAt = 0.0;
+}
+
+auto triggerLastTrickOrTalonReveal() -> void
+{
+    ctx().lastTrickOrTalonRevealStartedAt = std::empty(ctx().lastTrickOrTalon) ? 0.0 : emscripten_get_now();
+}
+
+auto setLastTrickOrTalon(std::vector<CardNameView> cards) -> void
+{
+    if (rng::equal(ctx().lastTrickOrTalon, cards)) { return; }
+    ctx().lastTrickOrTalonRevealStartedAt = 0.0;
+    if (std::empty(ctx().lastTrickOrTalon) || std::empty(cards)) {
+        ctx().lastTrickOrTalonTransition.reset();
+        ctx().lastTrickOrTalon = std::move(cards);
+        triggerLastTrickOrTalonReveal();
+        return;
+    }
+    ctx().lastTrickOrTalonTransition = LastTrickOrTalonTransition{
+        .from = ctx().lastTrickOrTalon,
+        .to = std::move(cards),
+        .startedAt = emscripten_get_now(),
+        .durationMs = LastTrickOrTalonFlipDurationMs};
 }
 
 auto updateWindowSize() -> void
@@ -3705,6 +3878,51 @@ auto drawGuiLabelCentered(const std::string& text, const r::Vector2& anchor) -> 
         size.y + shift // height = text + top + bottom padding
     };
     GuiLabel(bounds, text.c_str());
+}
+
+auto drawGameTextAnimatedScale(
+    const r::Vector2& pos,
+    const std::string_view gameText,
+    const Shift shift,
+    const float scaleX,
+    const float scaleY)
+    -> std::pair<bool, r::Vector2>
+{
+    using enum Shift;
+    const auto text = std::string{gameText};
+    const auto textSize = measureGuiText(text);
+    const auto sign = hasShift(shift, Negative) ? -1.f : 1.f;
+    const auto shiftX = sign * (textSize.x * 0.5f + textSize.y * 0.5f);
+    const auto shiftY = sign * textSize.y;
+    const auto anchor = hasShift(shift, Horizont) ? r::Vector2{pos.x + shiftX, pos.y}
+                                                  : r::Vector2{pos.x, pos.y + shiftY};
+    if (std::empty(gameText)) { return {false, anchor}; }
+    const auto clampedScaleX = std::clamp(scaleX, 0.0f, 1.0f);
+    const auto clampedScaleY = std::clamp(scaleY, 0.0f, 1.0f);
+    if (clampedScaleX <= 0.0f || clampedScaleY <= 0.0f) { return {true, anchor}; }
+    const auto draw = [&] { drawGuiLabelCentered(text, anchor); };
+    if (clampedScaleX >= 0.999f && clampedScaleY >= 0.999f) {
+        draw();
+        return {true, anchor};
+    }
+    const auto labelShift = VirtualH / 135.f;
+    const auto bounds = r::Rectangle{
+        anchor.x - textSize.x * 0.5f - (labelShift * 0.5f),
+        anchor.y - textSize.y * 0.5f - (labelShift * 0.5f),
+        textSize.x + labelShift,
+        textSize.y + labelShift};
+    const auto visibleWidth = bounds.width * clampedScaleX;
+    const auto visibleHeight = bounds.height * clampedScaleY;
+    const auto scissorX = bounds.x + (bounds.width - visibleWidth) * 0.5f;
+    const auto scissorY = bounds.y + (bounds.height - visibleHeight) * 0.5f;
+    BeginScissorMode(
+        static_cast<int>(std::floor(scissorX)),
+        static_cast<int>(std::floor(scissorY)),
+        std::max(1, static_cast<int>(std::ceil(visibleWidth))),
+        std::max(1, static_cast<int>(std::ceil(visibleHeight))));
+    draw();
+    EndScissorMode();
+    return {true, anchor};
 }
 
 auto drawRectangleWithBorder(const r::Rectangle& rect, const r::Color& fillColor, const r::Color& borderColor) -> void
@@ -4552,7 +4770,7 @@ auto drawCards(const r::Vector2& pos, Player& player, const Shift shift, const i
         if (scheme == "bluish") { return TEXT_COLOR_PRESSED; }
         return BASE_COLOR_PRESSED;
     });
-    const auto trick = player.tricksTaken != 0 ? fmt::format(" {}", prettifyNumber(player.tricksTaken)) : "";
+    const auto trick = animatedTrickCounter(player);
     const auto [prefix, suffix] = composePlayerNameDecorationsOnly(player);
     auto anchor = withGuiStyle(LABEL, TEXT_COLOR_NORMAL, turnColor, player.id == ctx().turnPlayerId, [&] {
         return drawGameText(pos, composePlayerName(player), shift).second;
@@ -4570,7 +4788,7 @@ auto drawCards(const r::Vector2& pos, Player& player, const Shift shift, const i
     withGuiFont(ctx().fontL, [&] {
         withGuiStyle(DEFAULT, TEXT_SIZE, static_cast<int>(ctx().fontSizeL() * 0.85f), [&] {
             const auto y = player.id != ctx().myPlayerId ? (CardHeight * 0.6f) : (CardHeight * 0.15f);
-            return drawGameText({trickAnchor.x, trickAnchor.y - y}, trick, Shift::None);
+            drawGameTextAnimatedScale({trickAnchor.x, trickAnchor.y - y}, trick.text, Shift::None, trick.scaleX, trick.scaleY);
         });
     });
     return anchor;
@@ -5389,14 +5607,15 @@ auto drawHowToPlayMenu() -> void
 
 auto removeCardsFromHand(Player& player, const std::vector<CardNameView>& cardNames) -> void
 {
-    ctx().lastTrickOrTalon.clear();
+    auto nextLastTrickOrTalon = std::vector<CardNameView>{};
     for (const auto name : cardNames) {
         const auto it = rng::find_if(player.hand, [&](const Card* card) { return card->name == name; });
         if (it == player.hand.end()) { continue; }
         ctx().cardPositions.erase(name);
         player.hand.erase(it);
-        ctx().lastTrickOrTalon.push_back(name);
+        nextLastTrickOrTalon.push_back(name);
     }
+    setLastTrickOrTalon(std::move(nextLastTrickOrTalon));
 }
 
 auto handleTalonCardClick(std::list<const Card*>& hand) -> void
@@ -6850,14 +7069,14 @@ auto drawLadder() -> void
     });
 }
 
-auto drawLastTrickOrTalon() -> void
+auto drawLastTrickOrTalonCards(const std::vector<CardNameView>& cards, const float flipScaleX) -> void
 {
-    if (std::empty(ctx().lastTrickOrTalon)) { return; }
+    if (std::empty(cards)) { return; }
     static constexpr auto cardCenterX = CardBorderMargin + CardWidth * 0.5f;
     static constexpr auto symbolHeight = CardHeight / 2.5f;
     static constexpr auto slotCompression = 0.84f;
     static constexpr auto y = VirtualH - BorderMargin - symbolHeight;
-    const auto codepoints = ctx().lastTrickOrTalon | rv::transform(&cardNameCodepoint) | rng::to_vector;
+    const auto codepoints = cards | rv::transform(&cardNameCodepoint) | rng::to_vector;
     const auto scale = symbolHeight / static_cast<float>(ctx().fontL.baseSize);
     const auto imageWidth = symbolHeight * CardAspectRatio;
     auto slotWidths = std::vector<float>{};
@@ -6874,17 +7093,43 @@ auto drawLastTrickOrTalon() -> void
     if (std::size(codepoints) > 1) { totalWidth += FontSpacing * scale * static_cast<float>(std::size(codepoints) - 1); }
     const auto startX = cardCenterX - totalWidth * 0.5f;
     auto x = startX;
-    for (const auto [i, cardName] : ctx().lastTrickOrTalon | rv::enumerate) {
+    for (const auto [i, cardName] : cards | rv::enumerate) {
         const auto slotWidth = slotWidths[i];
         const auto imageX = x + (slotWidth - imageWidth) * 0.5f;
         const auto& texture = getSmallCard(cardName).texture;
         const auto sourceRec
             = r::Rectangle{0.f, 0.f, static_cast<float>(texture.width), static_cast<float>(texture.height)};
-        const auto destRec = r::Rectangle{imageX, y, imageWidth, symbolHeight};
+        const auto visibleWidth = imageWidth * flipScaleX;
+        const auto destRec = r::Rectangle{imageX + (imageWidth - visibleWidth) * 0.5f, y, visibleWidth, symbolHeight};
         texture.Draw(sourceRec, destRec, {0.f, 0.f}, 0.f, r::Color::White());
         x += slotWidth;
         if ((i + 1) < std::size(codepoints)) { x += FontSpacing * scale; }
     }
+}
+
+auto drawLastTrickOrTalon() -> void
+{
+    if (ctx().lastTrickOrTalonTransition.has_value()) {
+        const auto& transition = *ctx().lastTrickOrTalonTransition;
+        const auto progress = static_cast<float>(
+            std::clamp((emscripten_get_now() - transition.startedAt) / transition.durationMs, 0.0, 1.0));
+        if (progress >= 1.0f) {
+            ctx().lastTrickOrTalon = transition.to;
+            ctx().lastTrickOrTalonTransition.reset();
+        } else if (progress < 0.5f) {
+            drawLastTrickOrTalonCards(transition.from, 1.0f - easeInOutCubic(progress * 2.0f));
+            return;
+        } else {
+            drawLastTrickOrTalonCards(transition.to, easeInOutCubic((progress - 0.5f) * 2.0f));
+            return;
+        }
+    }
+    if (std::empty(ctx().lastTrickOrTalon)) { return; }
+    const auto revealProgress = ctx().lastTrickOrTalonRevealStartedAt > 0.0
+        ? static_cast<float>(std::clamp(
+              (emscripten_get_now() - ctx().lastTrickOrTalonRevealStartedAt) / LastTrickOrTalonFlipDurationMs, 0.0, 1.0))
+        : 1.0f;
+    drawLastTrickOrTalonCards(ctx().lastTrickOrTalon, easeOutCubic(revealProgress));
 }
 
 [[nodiscard]] auto drawFps(const float y, const Font& font, const float fontSize, const float fontSpacing) -> float
@@ -7265,6 +7510,7 @@ auto updateMenuPosition(Menu& menu) -> void
 auto updateDrawFrame([[maybe_unused]] void* ud) -> void
 {
     applyPendingTalonReveal();
+    applyPendingLastTrickOrTalon();
     if (GuiIsLocked()
         and not ctx().settingsMenu.moving
         and not ctx().speechBubbleMenu.moving
