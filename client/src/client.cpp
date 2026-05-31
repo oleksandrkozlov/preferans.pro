@@ -604,6 +604,7 @@ struct SettingsMenu {
     std::string loadedDeck = "atlas";
     std::string loadedLang;
     bool showPingAndFps{};
+    bool music = true;
     bool soundEffects = true;
     r::Vector2 grabOffset{};
     bool moving{};
@@ -943,7 +944,20 @@ struct Voice {
     return {};
 }
 
+[[nodiscard]] auto makeMusic(const std::string_view filename) -> std::optional<r::Music>
+{
+    if (const auto path = sounds(filename); std::filesystem::exists(path)) {
+        auto music = r::Music{path};
+        music.looping = true;
+        return music;
+    }
+    return {};
+}
+
 auto stopSound(std::optional<r::Sound>& sound) -> void;
+auto pauseMusic(std::optional<r::Music>& music, bool& isPaused) -> void;
+auto stopMusic(std::optional<r::Music>& music, bool& isPaused) -> void;
+auto updateMusic(std::optional<r::Music>& music) -> void;
 [[nodiscard]] auto isTalonTransferAnimating() -> bool;
 
 struct Sound {
@@ -956,6 +970,10 @@ struct Sound {
     std::optional<r::Sound> readyCheckSucceeded = makeSound("ready_check_succeeded.mp3");
     std::optional<r::Sound> dealCards = makeSound("deal_cards.wav");
     std::optional<r::Sound> placeCard = makeSound("place_card.mp3");
+    std::optional<r::Sound> collectTrick = makeSound("collect_trick.mp3");
+    std::optional<r::Sound> discardCards = makeSound("discard_cards.mp3");
+    std::optional<r::Music> soundTrack = makeMusic("sound_track.mp3");
+    bool isSoundTrackPaused = false;
 
     auto withoutSoundEffects() -> void
     {
@@ -969,6 +987,18 @@ struct Sound {
         stopSound(readyCheckSucceeded);
         stopSound(dealCards);
         stopSound(placeCard);
+        stopSound(collectTrick);
+        stopSound(discardCards);
+    }
+
+    auto withoutMusic() -> void
+    {
+        pauseMusic(soundTrack, isSoundTrackPaused);
+    }
+
+    auto stopAllMusic() -> void
+    {
+        stopMusic(soundTrack, isSoundTrackPaused);
     }
 };
 
@@ -1219,10 +1249,42 @@ auto playSound(std::optional<r::Sound>& sound) -> void
     sound->Play();
 }
 
+auto playMusic(std::optional<r::Music>& music, bool& isPaused) -> void
+{
+    if (not music or not ctx().settingsMenu.music) { return; }
+    if (music->IsPlaying()) { return; }
+    if (isPaused) {
+        music->Resume();
+    } else {
+        music->Play();
+    }
+    isPaused = false;
+}
+
 auto stopSound(std::optional<r::Sound>& sound) -> void
 {
     if (not sound) { return; }
     sound->Stop();
+}
+
+auto pauseMusic(std::optional<r::Music>& music, bool& isPaused) -> void
+{
+    if (not music or isPaused or not music->IsPlaying()) { return; }
+    music->Pause();
+    isPaused = true;
+}
+
+auto stopMusic(std::optional<r::Music>& music, bool& isPaused) -> void
+{
+    if (not music) { return; }
+    music->Stop();
+    isPaused = false;
+}
+
+auto updateMusic(std::optional<r::Music>& music) -> void
+{
+    if (not music) { return; }
+    music->Update();
 }
 
 [[nodiscard]] auto players() -> decltype(auto)
@@ -1617,7 +1679,7 @@ auto drawMovingCards() -> void
         const auto progress = std::clamp((now - movingCard.startedAt) / movingCard.durationMs, 0.0, 1.0);
         const auto motionProgress = easeOutCubic(static_cast<float>(progress));
         if (movingCard.playSoundOnArrival && motionProgress >= 0.75f) {
-            playSound(ctx().sound.placeCard);
+            playSound(ctx().sound.placeCard); // on other player's card
             movingCard.playSoundOnArrival = false;
         }
         const auto pos = Vector2Lerp(movingCard.from, movingCard.to, motionProgress);
@@ -2394,6 +2456,8 @@ auto startTrickCollection(const PlayerId& winnerPlayerId, const Card* talonCard 
         finalizeTrickCollection();
         return;
     }
+
+    playSound(ctx().sound.collectTrick);
     const auto& slots = playSlots();
     const auto startedAt = emscripten_get_now();
     const auto target = trickCollectionTargetPosition(winnerPlayerId);
@@ -2579,6 +2643,7 @@ auto drawTalonTransfers() -> void
 auto startMyTalonDiscardAnimation(const std::vector<CardNameView>& cardNames) -> void
 {
     if (std::empty(cardNames)) { return; }
+    playSound(ctx().sound.discardCards);
     const auto currentHand = ctx().myPlayer().hand;
     auto futureHand = currentHand;
     futureHand.remove_if([&](const Card* card) { return rng::contains(cardNames, card->name); });
@@ -2606,6 +2671,7 @@ auto startMyTalonDiscardAnimation(const std::vector<CardNameView>& cardNames) ->
 auto startHiddenTalonDiscardAnimation(const PlayerId& playerId, const int discardCount = 2) -> void
 {
     if (discardCount <= 0) { return; }
+    playSound(ctx().sound.discardCards);
     const auto [leftId, rightId] = getOpponentIds();
     const auto drawPosition = playerId == rightId ? DrawPosition::Right : DrawPosition::Left;
     const auto currentCardCount = not std::empty(ctx().player(playerId).hand)
@@ -2958,6 +3024,7 @@ auto finishLogin(auto& response) -> void
     ctx().isLoginInProgress = false;
     initMic();
     initAudioEngine();
+    if (ctx().isGameStarted) { playMusic(ctx().sound.soundTrack, ctx().sound.isSoundTrackPaused); }
 }
 
 auto handleLoginResponse(const Message& msg) -> void
@@ -3160,6 +3227,7 @@ auto handleDealCards(const Message& msg) -> void
             resetReadyCheck();
             playSound(ctx().sound.gameStarted);
             playSound(ctx().sound.dealCards);
+            waitFor(5s, [] { playMusic(ctx().sound.soundTrack, ctx().sound.isSoundTrackPaused); });
         });
     }
     auto dealCards = makeMethod<DealCards>(msg);
@@ -3555,6 +3623,7 @@ auto handleDealFinished(const Message& msg) -> void
         | rng::to<std::map<PlayerId, std::int32_t>>();
     if (not std::empty(ctx().myPlayer().hand)) { ctx().scoreSheet.isVisible = true; }
     const auto overGame = [] {
+        ctx().sound.stopAllMusic();
         ctx().clear();
         ctx().scoreSheet.clear();
         ctx().isGameStarted = false;
@@ -4493,6 +4562,7 @@ auto drawLogoutMessage() -> void
         removeFromLocalStoragePlayerId();
         removeFromLocalStorageAuthToken();
         ctx().isLoggedIn = false;
+        ctx().sound.stopAllMusic();
         ctx().clear();
         ctx().scoreSheet.clear();
         ctx().isGameStarted = false;
@@ -5794,7 +5864,7 @@ auto handleCardClick(
         const auto _ = gsl::finally([&] {
             ctx().cardPositions.erase(posIt);
             hand.erase(it);
-            playSound(ctx().sound.placeCard);
+            playSound(ctx().sound.placeCard); // on my card click
         });
         act(**it);
     }
@@ -6306,7 +6376,7 @@ auto drawSettingsMenu() -> void
         ctx().settingsMenu.windowBoxPos.x + margin,
         ctx().settingsMenu.windowBoxPos.y + RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT + margin * 1.5f};
     const auto langListView = r::Vector2{langGroupBox.x + margin, langGroupBox.y + margin};
-    static constexpr auto visibleColorSchemeCount = 4uz;
+    static constexpr auto visibleColorSchemeCount = 2uz;
     static const auto colorSchemeListViewH
         = static_cast<float>(visibleColorSchemeCount) * listViewEntryH + getStyle(LISTVIEW, BORDER_WIDTH) * 4.f;
     static const auto colorSchemeGroupBoxH = colorSchemeListViewH + margin * 2.f;
@@ -6319,11 +6389,12 @@ auto drawSettingsMenu() -> void
     const auto deckGroupBox
         = r::Vector2{colorSchemeListView.x - margin, colorSchemeListView.y + colorSchemeListViewH + margin * 2.5f};
     const auto deckListView = r::Vector2{deckGroupBox.x + margin, deckGroupBox.y + margin};
-    static constexpr auto otherGroupBoxH = margin * 4.f;
+    static constexpr auto otherGroupBoxH = margin * 5.5f;
     const auto otherGroupBox
         = r::Vector2{deckListView.x - margin, deckListView.y + deckListViewH + margin * 2.5f};
     const auto fpsCheckbox = r::Vector2{otherGroupBox.x + margin, otherGroupBox.y + margin};
-    const auto soundEffectsCheckbox = r::Vector2{otherGroupBox.x + margin, fpsCheckbox.y + margin * 1.5f};
+    const auto musicCheckbox = r::Vector2{otherGroupBox.x + margin, fpsCheckbox.y + margin * 1.5f};
+    const auto soundEffectsCheckbox = r::Vector2{otherGroupBox.x + margin, musicCheckbox.y + margin * 1.5f};
     static const auto windowBoxH = (fpsCheckbox.y + otherGroupBoxH) - ctx().settingsMenu.windowBoxPos.y;
     ctx().settingsMenu.windowBox = r::Rectangle{
         ctx().settingsMenu.windowBoxPos.x, ctx().settingsMenu.windowBoxPos.y, SettingsMenu::windowBoxW, windowBoxH};
@@ -6334,6 +6405,7 @@ auto drawSettingsMenu() -> void
         const auto colorSchemeText = ctx().localizeText(GameText::ColorScheme);
         const auto otherText = ctx().localizeText(GameText::Other);
         const auto fpsText = ctx().localizeText(GameText::ShowFps);
+        const auto musicText = ctx().localizeText(GameText::Music);
         ctx().settingsMenu.isVisible = not GuiWindowBox(
             ctx().settingsMenu.windowBox,
             settingsText.c_str());
@@ -6392,6 +6464,18 @@ auto drawSettingsMenu() -> void
                 saveToLocalStorage("show_ping_and_fps", "true");
             } else {
                 removeFromLocalStorage("show_ping_and_fps");
+            }
+        }
+        const auto music = ctx().settingsMenu.music;
+        GuiCheckBox(
+            {musicCheckbox.x, musicCheckbox.y, margin, margin}, musicText.c_str(), &ctx().settingsMenu.music);
+        if (music != ctx().settingsMenu.music) {
+            if (ctx().settingsMenu.music) {
+                removeFromLocalStorage("music");
+                if (ctx().isGameStarted) { playMusic(ctx().sound.soundTrack, ctx().sound.isSoundTrackPaused); }
+            } else {
+                saveToLocalStorage("music", "false");
+                ctx().sound.withoutMusic();
             }
         }
         const auto soundEffects = ctx().settingsMenu.soundEffects;
@@ -7672,6 +7756,7 @@ auto updateMenuPosition(Menu& menu) -> void
 
 auto updateDrawFrame([[maybe_unused]] void* ud) -> void
 {
+    updateMusic(ctx().sound.soundTrack);
     applyPendingTalonReveal();
     applyPendingLastTrickOrTalon();
     if (GuiIsLocked()
@@ -7801,6 +7886,7 @@ int main(const int argc, const char* const argv[])
     pref::loadFromLocalStorageAuthToken();
     pref::loadFromLocalStoragePlayerName();
     ctx.settingsMenu.showPingAndFps = not std::empty(pref::loadFromLocalStorage("show_ping_and_fps"));
+    ctx.settingsMenu.music = std::empty(pref::loadFromLocalStorage("music"));
     ctx.settingsMenu.soundEffects = std::empty(pref::loadFromLocalStorage("sound_effects"));
     const auto args = docopt::docopt(pref::usage, {std::next(argv), std::next(argv, argc)});
     ctx.url = args.at("--url").asString();

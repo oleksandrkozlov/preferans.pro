@@ -304,6 +304,7 @@ enum class GameLang : std::size_t {
     PREF_X(Send, "Send", "Надіслати", "Отправить")                                                                     \
     PREF_X(Settings, "SETTINGS", "НАЛАШТУВАННЯ", "НАСТРОЙКИ")                                                          \
     PREF_X(SevenPlayed, "7 (played)", "7 (зіграною)", "7 (сыгранной)")                                                 \
+    PREF_X(Music, "Music", "Музика", "Музыка")                                                                          \
     PREF_X(ShowFps, "Show Ping & FPS", "Показувати пінг та част. кадрів", "Показывать пинг и част. кадров")            \
     PREF_X(SlidingPassing, "Sliding passing", "Ковзні розпаси", "Скользящие распасы")                                  \
     PREF_X(Sochi, "Sochi", "Сочинка", "Сочинка")                                                                       \
