@@ -47,6 +47,9 @@ namespace {
 
 namespace r = raylib;
 
+struct Context;
+[[nodiscard]] auto ctx() -> Context&;
+
 constexpr auto PlayerIdStorageKey = "player_id";
 constexpr auto PlayerNameStorageKey = "player_name";
 constexpr auto AuthTokenStorageKey = "auth_token";
@@ -165,6 +168,14 @@ template<std::ranges::input_range Positions>
     return cardMotionDurationMs(positionsCenter(fromPositions), positionsCenter(toPositions));
 }
 
+template<std::ranges::forward_range Range>
+[[nodiscard]] auto indexOf(const Range& values, const std::string_view target) -> int
+{
+    const auto it = rng::find(values, target);
+    if (it == rng::end(values)) { return -1; }
+    return gsl::narrow_cast<int>(rng::distance(rng::begin(values), it));
+}
+
 enum class DrawPosition { Left, Right };
 
 [[nodiscard]] constexpr auto isRight(const DrawPosition drawPosition) noexcept -> bool
@@ -227,34 +238,80 @@ template<typename... Args>
     return resources("shaders", name);
 }
 
+[[nodiscard]] auto isAtlasDeck() noexcept -> bool;
+[[nodiscard]] auto isEnglishCardLanguage() noexcept -> bool;
+
+[[nodiscard]] constexpr auto usesAlternativeFaceOnNonEnglish(const CardNameView name) noexcept -> bool
+{
+    const auto rank = cardRank(name);
+    return rank == PREF_JACK || rank == PREF_QUEEN || rank == PREF_ACE;
+}
+
+[[nodiscard]] auto handCardResourcePath(
+    const CardNameView name, const std::string_view deck, const bool englishLanguage) -> std::string
+{
+    const auto languageDir = (englishLanguage || !usesAlternativeFaceOnNonEnglish(name)) ? "english" : "alternative";
+    return resources("cards", deck, languageDir, fmt::format("{}.png", name));
+}
+
+[[nodiscard]] auto lastTrickCardResourcePath(const CardNameView name, const bool englishLanguage) -> std::string
+{
+    const auto languageDir = (englishLanguage || !usesAlternativeFaceOnNonEnglish(name)) ? "english" : "alternative";
+    return resources("cards", "simple", languageDir, fmt::format("{}.png", name));
+}
+
+[[nodiscard]] auto loadCardTexture(const std::string& path) -> r::Texture
+{
+    auto image = r::Image{path};
+    image.Resize(static_cast<int>(CardWidth), static_cast<int>(CardHeight));
+    return image.LoadTexture();
+}
+
 struct Card {
     Card(CardNameView n)
         : name{n}
-        , image{r::Image{resources("cards", fmt::format("{}.png", name))}}
+        , pokerEnglishTexture{loadCardTexture(handCardResourcePath(name, "poker", true))}
+        , pokerAlternativeTexture{loadCardTexture(handCardResourcePath(name, "poker", false))}
+        , atlasEnglishTexture{loadCardTexture(handCardResourcePath(name, "atlas", true))}
+        , atlasAlternativeTexture{loadCardTexture(handCardResourcePath(name, "atlas", false))}
     {
-        image.Resize(static_cast<int>(CardWidth), static_cast<int>(CardHeight));
-        texture = image.LoadTexture();
+    }
+
+    [[nodiscard]] auto faceTexture() const noexcept -> const r::Texture&
+    {
+        if (isAtlasDeck()) {
+            return isEnglishCardLanguage() ? atlasEnglishTexture : atlasAlternativeTexture;
+        }
+        return isEnglishCardLanguage() ? pokerEnglishTexture : pokerAlternativeTexture;
     }
 
     CardNameView name;
-    r::Image image;
-    r::Texture texture{};
+    r::Texture pokerEnglishTexture{};
+    r::Texture pokerAlternativeTexture{};
+    r::Texture atlasEnglishTexture{};
+    r::Texture atlasAlternativeTexture{};
 };
 
 struct SmallCard {
     SmallCard(CardNameView n)
         : name{n}
-        , image{r::Image{resources("small-cards", fmt::format("{}.png", name))}}
+        , englishTexture{loadCardTexture(lastTrickCardResourcePath(name, true))}
+        , alternativeTexture{loadCardTexture(lastTrickCardResourcePath(name, false))}
     {
-        image.Resize(static_cast<int>(CardWidth), static_cast<int>(CardHeight));
-        texture = image.LoadTexture();
-        GenTextureMipmaps(&texture);
-        SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR);
+        GenTextureMipmaps(&englishTexture);
+        GenTextureMipmaps(&alternativeTexture);
+        SetTextureFilter(englishTexture, TEXTURE_FILTER_TRILINEAR);
+        SetTextureFilter(alternativeTexture, TEXTURE_FILTER_TRILINEAR);
+    }
+
+    [[nodiscard]] auto faceTexture() const noexcept -> const r::Texture&
+    {
+        return isEnglishCardLanguage() ? englishTexture : alternativeTexture;
     }
 
     CardNameView name;
-    r::Image image;
-    r::Texture texture{};
+    r::Texture englishTexture{};
+    r::Texture alternativeTexture{};
 };
 
 struct CardShineShader {
@@ -538,10 +595,13 @@ struct SettingsMenu {
     static constexpr auto ButtomY = VirtualH / 1.9f; // approximately
     int colorSchemeIdScroll = -1;
     int colorSchemeIdSelect = -1;
+    int deckIdScroll = -1;
+    int deckIdSelect = -1;
     int langIdScroll = -1;
     int langIdSelect = -1;
     bool isVisible{};
     std::string loadedColorScheme;
+    std::string loadedDeck = "atlas";
     std::string loadedLang;
     bool showPingAndFps{};
     bool soundEffects = true;
@@ -1118,6 +1178,16 @@ struct Context {
     return ctx;
 }
 
+[[nodiscard]] auto isAtlasDeck() noexcept -> bool
+{
+    return ctx().settingsMenu.loadedDeck == "atlas";
+}
+
+[[nodiscard]] auto isEnglishCardLanguage() noexcept -> bool
+{
+    return ctx().settingsMenu.loadedLang == "english";
+}
+
 auto loadCardShineShader() -> void
 {
     auto& cardShineShader = ctx().cardShineShader;
@@ -1500,16 +1570,18 @@ auto startCardMove(
 auto drawCardFace(const Card& card, const r::Rectangle& dest, const Color tint = WHITE) -> void
 {
     if (dest.width <= 0.f or dest.height <= 0.f) { return; }
+    const auto& texture = card.faceTexture();
     const auto source = r::Rectangle{
-        0.f, 0.f, static_cast<float>(card.texture.width), static_cast<float>(card.texture.height)};
-    DrawTexturePro(card.texture, source, dest, {0.f, 0.f}, 0.f, tint);
+        0.f, 0.f, static_cast<float>(texture.width), static_cast<float>(texture.height)};
+    DrawTexturePro(texture, source, dest, {0.f, 0.f}, 0.f, tint);
 }
 
 auto drawCardShineEffect(const Card& card, const r::Vector2& cardPosition, const r::Color tint, const float elapsed) -> void
 {
     auto& cardShineShader = ctx().cardShineShader;
+    const auto& texture = card.faceTexture();
     if (not cardShineShader.isLoaded) {
-        card.texture.Draw(cardPosition, tint);
+        texture.Draw(cardPosition, tint);
         return;
     }
     const auto loopedElapsed = std::fmod(elapsed, 1000.0f);
@@ -1517,7 +1589,7 @@ auto drawCardShineEffect(const Card& card, const r::Vector2& cardPosition, const
     SetShaderValue(cardShineShader.shader, cardShineShader.timeLoc, &loopedElapsed, SHADER_UNIFORM_FLOAT);
     SetShaderValue(cardShineShader.shader, cardShineShader.cardSizeLoc, cardSize.data(), SHADER_UNIFORM_VEC2);
     BeginShaderMode(cardShineShader.shader);
-    card.texture.Draw(cardPosition, tint);
+    texture.Draw(cardPosition, tint);
     EndShaderMode();
 }
 
@@ -1560,7 +1632,7 @@ auto drawMovingCards() -> void
                 drawCardFace(*movingCard.card, dest);
             }
         } else {
-            movingCard.card->texture.Draw(pos);
+            movingCard.card->faceTexture().Draw(pos);
         }
         return progress >= 1.0;
     });
@@ -1634,7 +1706,7 @@ auto drawPassGameTalon() -> void
         static_cast<float>((ctx().window.GetTime() - ctx().visiblePassGameTalonStartedAt) / appearDuration), 0.0f, 1.0f);
     const auto easedProgress = easeOutCubic(progress);
     const auto pos = Vector2Lerp(from, topSlot, easedProgress);
-    ctx().passGameTalon.get().texture.Draw(pos);
+    ctx().passGameTalon.get().faceTexture().Draw(pos);
 }
 
 [[nodiscard]] auto pendingTalonRevealPositions() -> std::vector<r::Vector2>
@@ -1785,7 +1857,7 @@ auto drawInitialDealAnimation(const PlayerId& playerId) -> bool
             drawBackCard({pos.x, pos.y, CardWidth, CardHeight});
         } else if (dealt.card != nullptr) {
             ctx().cardPositions[dealt.card->name] = pos;
-            dealt.card->texture.Draw(pos);
+            dealt.card->faceTexture().Draw(pos);
         }
         if (progress < 1.0) { isFinished = false; }
     }
@@ -2104,7 +2176,7 @@ auto drawAnimatedMyHandCards(Player& player, const float progress) -> void
             const auto it = positions.find(card->name);
             if (it == positions.end()) { continue; }
             ctx().cardPositions[card->name] = it->second;
-            card->texture.Draw(it->second);
+            card->faceTexture().Draw(it->second);
         }
         return;
     }
@@ -2120,13 +2192,13 @@ auto drawAnimatedMyHandCards(Player& player, const float progress) -> void
 
     for (const auto* card : futureHand) {
         if (const auto transferIt = transferPositions.find(card->name); transferIt != transferPositions.end()) {
-            card->texture.Draw(transferIt->second);
+            card->faceTexture().Draw(transferIt->second);
             continue;
         }
         const auto it = positions.find(card->name);
         if (it == positions.end()) { continue; }
         ctx().cardPositions[card->name] = it->second;
-        card->texture.Draw(it->second);
+        card->faceTexture().Draw(it->second);
     }
 }
 
@@ -2138,7 +2210,7 @@ auto drawAnimatedVisibleHandCards(Player& player, const float progress) -> void
         const auto it = positions.find(card->name);
         if (it == positions.end()) { continue; }
         ctx().cardPositions[card->name] = it->second;
-        card->texture.Draw(it->second);
+        card->faceTexture().Draw(it->second);
     }
 }
 
@@ -2200,12 +2272,12 @@ auto drawAnimatedMyDiscardHand([[maybe_unused]] Player& player, const float prog
     }
     for (const auto cardName : ctx().myHandDiscardAnimation->drawOrder) {
         if (const auto discardIt = discardPositions.find(cardName); discardIt != discardPositions.end()) {
-            getCard(cardName).texture.Draw(discardIt->second);
+            getCard(cardName).faceTexture().Draw(discardIt->second);
             continue;
         }
         if (const auto remainingIt = remainingPositions.find(cardName); remainingIt != remainingPositions.end()) {
             ctx().cardPositions[cardName] = remainingIt->second;
-            getCard(cardName).texture.Draw(remainingIt->second);
+            getCard(cardName).faceTexture().Draw(remainingIt->second);
         }
     }
 }
@@ -2381,7 +2453,7 @@ auto drawTrickCollections() -> void
         const auto toOffset = Vector2Subtract(card.to, card.groupToCenter);
         const auto offset = Vector2Lerp(fromOffset, toOffset, motionProgress);
         const auto pos = Vector2Add(center, offset);
-        card.card->texture.Draw(pos);
+        card.card->faceTexture().Draw(pos);
         return progress >= 1.0;
     });
     finalizeTrickCollection();
@@ -4605,7 +4677,7 @@ auto drawCardShineEffect(const Card& card, const bool isHovered, const r::Vector
     auto& cardShineShader = ctx().cardShineShader;
     if (not isHovered or not cardShineShader.isLoaded) {
         if (cardShineShader.hoveredCard == &card) { cardShineShader.hoveredCard = nullptr; }
-        card.texture.Draw(cardPosition, tint);
+        card.faceTexture().Draw(cardPosition, tint);
         return;
     }
     const auto now = ctx().window.GetTime();
@@ -5253,13 +5325,13 @@ auto drawPlayedCards() -> void
     drawMovingCards();
     if (std::empty(ctx().cardsOnTable)) { return; }
     if (ctx().cardsOnTable.contains(leftOpponentId) and not isCardMoving(leftOpponentId)) {
-        ctx().cardsOnTable.at(leftOpponentId)->texture.Draw(slots.left);
+        ctx().cardsOnTable.at(leftOpponentId)->faceTexture().Draw(slots.left);
     }
     if (ctx().cardsOnTable.contains(rightOpponentId) and not isCardMoving(rightOpponentId)) {
-        ctx().cardsOnTable.at(rightOpponentId)->texture.Draw(slots.right);
+        ctx().cardsOnTable.at(rightOpponentId)->faceTexture().Draw(slots.right);
     }
     if (ctx().cardsOnTable.contains(ctx().myPlayerId) and not isCardMoving(ctx().myPlayerId)) {
-        ctx().cardsOnTable.at(ctx().myPlayerId)->texture.Draw(slots.bottom);
+        ctx().cardsOnTable.at(ctx().myPlayerId)->faceTexture().Draw(slots.bottom);
     }
 }
 
@@ -5655,7 +5727,7 @@ auto handleTalonCardClick(std::list<const Card*>& hand) -> void
     const auto mousePos = r::Mouse::GetPosition();
     if (isMouseOverBlockingOverlay(mousePos)) { return; }
     const auto hit = [&](const Card* c) {
-        return r::Rectangle{ctx().cardPositions[c->name], c->texture.GetSize()}.CheckCollision(mousePos);
+        return r::Rectangle{ctx().cardPositions[c->name], c->faceTexture().GetSize()}.CheckCollision(mousePos);
     };
     const auto reversed = hand | rv::reverse;
     if (const auto rit = rng::find_if(reversed, hit); rit != rng::cend(reversed)) {
@@ -5686,7 +5758,7 @@ auto handleCardClick(
     if (not r::Mouse::IsButtonPressed(MOUSE_LEFT_BUTTON)) { return; }
     const auto mousePos = r::Mouse::GetPosition();
     const auto hit = [&](const Card* c) {
-        return r::Rectangle{ctx().cardPositions[c->name], c->texture.GetSize()}.CheckCollision(mousePos);
+        return r::Rectangle{ctx().cardPositions[c->name], c->faceTexture().GetSize()}.CheckCollision(mousePos);
     };
     const auto reversed = hand | rv::reverse;
     if (const auto rit = rng::find_if(reversed, hit); rit != rng::cend(reversed)) {
@@ -5786,11 +5858,22 @@ auto loadColorScheme(const std::string_view style) -> void
 {
     // TODO: highlighted a loaded scheme at startup
     const auto name = style | ToLower | ToString;
+    static constexpr auto colorSchemes
+        = std::array{"dracula", "genesis", "amber", "dark", "cyber", "jungle", "lavanda", "bluish"};
     const auto stylePath = resources("styles", fmt::format("style_{}.rgs", name));
     GuiLoadStyle(stylePath.c_str());
     GuiSetStyle(LISTVIEW, SCROLLBAR_WIDTH, ScrollBarWidth);
     ctx().settingsMenu.loadedColorScheme = name;
+    ctx().settingsMenu.colorSchemeIdSelect = indexOf(colorSchemes, name);
     saveToLocalStorage("color_scheme", name);
+}
+
+auto loadDeck(const std::string_view deck) -> void
+{
+    const auto name = deck | ToLower | ToString;
+    ctx().settingsMenu.loadedDeck = (name == "poker") ? "poker" : "atlas";
+    ctx().settingsMenu.deckIdSelect = ctx().settingsMenu.loadedDeck == "atlas" ? 0 : 1;
+    saveToLocalStorage("deck", ctx().settingsMenu.loadedDeck);
 }
 
 [[nodiscard]] constexpr auto textToEnglish(const std::string_view text) noexcept -> std::string_view
@@ -5810,12 +5893,14 @@ auto loadColorScheme(const std::string_view style) -> void
 auto loadLang(const std::string_view lang) -> void
 {
     const auto name = lang | ToLower | ToString;
+    static constexpr auto langs = std::array{"english", "ukrainian", "alternative"};
     ctx().lang = std::invoke([&] {
         if (name == "ukrainian") { return pref::GameLang::Ukrainian; }
         if (name == "alternative") { return pref::GameLang::Alternative; }
         return pref::GameLang::English;
     });
     ctx().settingsMenu.loadedLang = name;
+    ctx().settingsMenu.langIdSelect = indexOf(langs, name);
     saveToLocalStorage("language", name);
 }
 
@@ -6168,6 +6253,10 @@ auto drawSpeechBubbleMenu() -> void
 auto drawSettingsMenu() -> void
 {
     if (not isVisible(ctx().settingsMenu)) { return; }
+    const auto deck = std::vector{
+        ctx().localizeText(GameText::Atlas),
+        ctx().localizeText(GameText::Poker),
+    };
     const auto lang = std::vector{
         ctx().localizeText(GameText::English),
         ctx().localizeText(GameText::Ukrainian),
@@ -6183,6 +6272,7 @@ auto drawSettingsMenu() -> void
         ctx().localizeText(GameText::Lavanda),
         ctx().localizeText(GameText::Bluish),
     };
+    const auto joinedDeck = deck | rv::intersperse(";") | rv::join | ToString;
     const auto joinedLangs = lang | rv::intersperse(";") | rv::join | ToString;
     const auto joinedColorScheme = colorScheme | rv::intersperse(";") | rv::join | ToString;
     static constexpr auto margin = VirtualH / 60.f;
@@ -6196,15 +6286,22 @@ auto drawSettingsMenu() -> void
         ctx().settingsMenu.windowBoxPos.x + margin,
         ctx().settingsMenu.windowBoxPos.y + RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT + margin * 1.5f};
     const auto langListView = r::Vector2{langGroupBox.x + margin, langGroupBox.y + margin};
+    static constexpr auto visibleColorSchemeCount = 4uz;
     static const auto colorSchemeListViewH
-        = static_cast<float>(std::size(colorScheme)) * listViewEntryH + getStyle(LISTVIEW, BORDER_WIDTH) * 4.f;
+        = static_cast<float>(visibleColorSchemeCount) * listViewEntryH + getStyle(LISTVIEW, BORDER_WIDTH) * 4.f;
     static const auto colorSchemeGroupBoxH = colorSchemeListViewH + margin * 2.f;
     const auto colorSchemeGroupBox
         = r::Vector2{langListView.x - margin, langListView.y + langListViewH + margin * 2.5f};
     const auto colorSchemeListView = r::Vector2{colorSchemeGroupBox.x + margin, colorSchemeGroupBox.y + margin};
+    static const auto deckListViewH
+        = static_cast<float>(std::size(deck)) * listViewEntryH + getStyle(LISTVIEW, BORDER_WIDTH) * 4.f;
+    static const auto deckGroupBoxH = deckListViewH + margin * 2.f;
+    const auto deckGroupBox
+        = r::Vector2{colorSchemeListView.x - margin, colorSchemeListView.y + colorSchemeListViewH + margin * 2.5f};
+    const auto deckListView = r::Vector2{deckGroupBox.x + margin, deckGroupBox.y + margin};
     static constexpr auto otherGroupBoxH = margin * 4.f;
     const auto otherGroupBox
-        = r::Vector2{colorSchemeListView.x - margin, colorSchemeListView.y + colorSchemeListViewH + margin * 2.5f};
+        = r::Vector2{deckListView.x - margin, deckListView.y + deckListViewH + margin * 2.5f};
     const auto fpsCheckbox = r::Vector2{otherGroupBox.x + margin, otherGroupBox.y + margin};
     const auto soundEffectsCheckbox = r::Vector2{otherGroupBox.x + margin, fpsCheckbox.y + margin * 1.5f};
     static const auto windowBoxH = (fpsCheckbox.y + otherGroupBoxH) - ctx().settingsMenu.windowBoxPos.y;
@@ -6212,6 +6309,7 @@ auto drawSettingsMenu() -> void
         ctx().settingsMenu.windowBoxPos.x, ctx().settingsMenu.windowBoxPos.y, SettingsMenu::windowBoxW, windowBoxH};
     withGuiFont(ctx().fontS, [&] {
         const auto settingsText = ctx().localizeText(GameText::Settings);
+        const auto deckText = ctx().localizeText(GameText::Deck);
         const auto languageText = ctx().localizeText(GameText::Language);
         const auto colorSchemeText = ctx().localizeText(GameText::ColorScheme);
         const auto otherText = ctx().localizeText(GameText::Other);
@@ -6249,6 +6347,20 @@ auto drawSettingsMenu() -> void
                 = textToEnglish(colorScheme[static_cast<std::size_t>(ctx().settingsMenu.colorSchemeIdSelect)]);
                 ctx().settingsMenu.loadedColorScheme != colorSchemeToLoad) {
                 loadColorScheme(colorSchemeToLoad);
+            }
+        }
+        GuiGroupBox({deckGroupBox.x, deckGroupBox.y, groupBoxW, deckGroupBoxH}, deckText.c_str());
+        GuiListView(
+            {deckListView.x, deckListView.y, listViewW, deckListViewH},
+            joinedDeck.c_str(),
+            &ctx().settingsMenu.deckIdScroll,
+            &ctx().settingsMenu.deckIdSelect);
+        if (ctx().settingsMenu.deckIdSelect >= 0
+            and ctx().settingsMenu.deckIdSelect < std::ssize(deck)
+            and r::Mouse::IsButtonPressed(MOUSE_LEFT_BUTTON)) {
+            if (const auto deckToLoad = textToEnglish(deck[static_cast<std::size_t>(ctx().settingsMenu.deckIdSelect)]);
+                ctx().settingsMenu.loadedDeck != (deckToLoad | ToLower | ToString)) {
+                loadDeck(deckToLoad);
             }
         }
         GuiGroupBox({otherGroupBox.x, otherGroupBox.y, groupBoxW, otherGroupBoxH}, otherText.c_str());
@@ -7127,7 +7239,7 @@ auto drawLastTrickOrTalonCards(const std::vector<CardNameView>& cards, const flo
     for (const auto [i, cardName] : cards | rv::enumerate) {
         const auto slotWidth = slotWidths[i];
         const auto imageX = x + (slotWidth - imageWidth) * 0.5f;
-        const auto& texture = getSmallCard(cardName).texture;
+        const auto& texture = getSmallCard(cardName).faceTexture();
         const auto sourceRec
             = r::Rectangle{0.f, 0.f, static_cast<float>(texture.width), static_cast<float>(texture.height)};
         const auto visibleWidth = imageWidth * flipScaleX;
@@ -7677,6 +7789,7 @@ int main(const int argc, const char* const argv[])
     GuiLoadStyleDefault();
     const auto colorScheme = pref::loadFromLocalStorage("color_scheme");
     pref::loadColorScheme(not std::empty(colorScheme) ? colorScheme : args.at("--color-scheme").asString());
+    pref::loadDeck(pref::loadFromLocalStorage("deck"));
     ctx.initialFont = GuiGetFont();
     pref::loadFonts();
     pref::loadCards();

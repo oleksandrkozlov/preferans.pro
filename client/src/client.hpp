@@ -224,8 +224,9 @@ enum class GameLang : std::size_t {
     PREF_X(Agreements, "AGREEMENTS", "ДОМОВЛЕНОСТІ", "СОГЛАШЕНИЯ")                                                     \
     PREF_X(Alternative, "Alternative", "Альтернативна", "Альтернативный")                                              \
     PREF_X(Amber, "Amber", "Бурштин", "Янтарь")                                                                        \
-    PREF_X(Assistance, "Assistance", "Допомога", "Помощь")                                                             \
     PREF_X(Arithmetic123, "Arithmetic (1, 2, 3)", "Арифметична (1, 2, 3)", "Арифметическая (1, 2, 3)")                 \
+    PREF_X(Assistance, "Assistance", "Допомога", "Помощь")                                                             \
+    PREF_X(Atlas, "Atlas", "Атласна", "Атласная")                                                                      \
     PREF_X(Bluish, "Bluish", "Блакитний", "Голубоватый")                                                               \
     PREF_X(Catch, PREF_CATCH, "Ловлю", "Ловлю")                                                                        \
     PREF_X(Check, PREF_CHECK, "Перевіряю", "Проверяю")                                                                 \
@@ -240,6 +241,7 @@ enum class GameLang : std::size_t {
     PREF_X(DPW, "D/P/W", "Г/П/В", "Г/П/В")                                                                             \
     PREF_X(Dark, "Dark", "Темний", "Тёмный")                                                                           \
     PREF_X(Date, "DATE", "ДАТА", "ДАТА")                                                                               \
+    PREF_X(Deck, "Deck", "Колода", "Колода")                                                                           \
     PREF_X(DiscardSelectedCards, "Discard selected cards?", "Скинути вибрані карти?", "Сбросить выбранные карты?")     \
     PREF_X(DownThree, "Down three", "Без трьох", "Без трёх")                                                           \
     PREF_X(Dracula, "Dracula", "Дракула", "Дракула")                                                                   \
@@ -252,6 +254,7 @@ enum class GameLang : std::size_t {
     PREF_X(Games, "GAMES", "К-ТЬ ІГОР", "К-ВО ИГР")                                                                    \
     PREF_X(GamesWithoutTalon, "Games without talon", "Ігри без прикупу", "Игры без прикупа")                           \
     PREF_X(Genesis, "Genesis", "Генезис", "Генезис")                                                                   \
+    PREF_X(GiveMoreTotal, "Give {} more, total {}", "Віддаю ще {}, всього {}", "Отдаю ещё {}, всего {}")               \
     PREF_X(GoDownThreeTricks, "Go down three tricks?", "Піти без трьох взяток?", "Уйти без трёх взяток?")              \
     PREF_X(HalfWhist, PREF_HALF_WHIST, "Піввіста", "Полвиста")                                                         \
     PREF_X(Jungle, "Jungle", "Джунглі", "Джунгли")                                                                     \
@@ -273,6 +276,8 @@ enum class GameLang : std::size_t {
     PREF_X(None, "", "", "")                                                                                           \
     PREF_X(Normal, "Normal", "Звичайна", "Обычная")                                                                    \
     PREF_X(Offer, "Offer", "Запропонувати", "Предложить")                                                              \
+    PREF_X(OfferAccepted, "Offer accepted", "Пропозицію прийнято", "Предложение принято")                              \
+    PREF_X(OfferDeclined, "Offer declined", "Пропозицію відхилено", "Предложение отклонено")                           \
     PREF_X(Ok, "OK", "OK", "OK")                                                                                       \
     PREF_X(Openly, PREF_OPENLY, "У світлу", "В светлую")                                                               \
     PREF_X(Other, "Other", "Інше", "Другое")                                                                           \
@@ -284,13 +289,10 @@ enum class GameLang : std::size_t {
     PREF_X(PassingProgression, "Passing progression", "Прогресія розпасів", "Прогрессия распасов")                     \
     PREF_X(Phrases, "PHRASES", "ФРАЗИ", "ФРАЗЫ")                                                                       \
     PREF_X(PlayerLeftTheGame, "left the game.", "покинув(а) гру.", "покинул(ла) игру.")                                \
+    PREF_X(Poker, "Poker", "Покерна", "Покерная")                                                                      \
     PREF_X(PoolLength, "Pool length", "Довжина пульки", "Длина пульки")                                                \
     PREF_X(Preferans, "PREFERANS", "ПРЕФЕРАНС", "ПРЕФЕРАНС")                                                           \
     PREF_X(Ranked, "Ranked", "Рейтингова", "Рейтинговая")                                                              \
-    PREF_X(TakeMoreTotal, "Take {} more, total {}", "Беру ще {}, всього {}", "Беру ещё {}, всего {}")                  \
-    PREF_X(GiveMoreTotal, "Give {} more, total {}", "Віддаю ще {}, всього {}", "Отдаю ещё {}, всего {}")               \
-    PREF_X(OfferAccepted, "Offer accepted", "Пропозицію прийнято", "Предложение принято")                              \
-    PREF_X(OfferDeclined, "Offer declined", "Пропозицію відхилено", "Предложение отклонено")                           \
     PREF_X(ResponsibleGreedy, "Responsible/Greedy", "Відповідальний/Жлобський", "Ответственный/Жлобский")              \
     PREF_X(Result, "RESULT", "РЕЗУЛЬТАТ", "РЕЗУЛЬТАТ")                                                                 \
     PREF_X(RevealCards, "Reveal cards", "Відкрити карти", "Открыть карты")                                             \
@@ -303,6 +305,7 @@ enum class GameLang : std::size_t {
     PREF_X(Sochi, "Sochi", "Сочинка", "Сочинка")                                                                       \
     PREF_X(SoundEffects, "Sound effects", "Звукові ефекти", "Звуковые эффекты")                                        \
     PREF_X(Stalingrad, "Stalingrad", "Сталінград", "Сталинград")                                                       \
+    PREF_X(TakeMoreTotal, "Take {} more, total {}", "Беру ще {}, всього {}", "Беру ещё {}, всего {}")                  \
     PREF_X(TalonBonus, "Talon bonus", "Премія за прикуп", "Премия за прикуп")                                          \
     PREF_X(TalonOnPassing, "Talon on passing", "Прикуп на розпасах", "Прикуп на распасах")                             \
     PREF_X(Ten, "10", "10", "10")                                                                                      \
