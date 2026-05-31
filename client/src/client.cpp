@@ -4008,6 +4008,23 @@ auto withGuiFont(const r::Font& font, std::invocable auto draw) -> auto
     ctx().fontS.DrawText(std::string{text}, {VirtualW * 0.5f, y}, ctx().fontSizeS(), FontSpacing, r::Color::Black());
 }
 
+auto drawSmoothAngledLine(const r::Vector2 start, const r::Vector2 end, const float thickness, const Color color) -> void
+{
+    DrawLineEx(start, end, thickness, color);
+
+    const auto delta = end - start;
+    const auto length = std::sqrt((delta.x * delta.x) + (delta.y * delta.y));
+    if (length <= 0.0f) { return; }
+
+    const auto normal = r::Vector2{-delta.y / length, delta.x / length};
+    const auto edgeOffset = thickness * 0.38f;
+    const auto edgeThickness = std::max(1.0f, thickness * 0.32f);
+    const auto edgeColor = Fade(color, 0.32f);
+    const auto offset = normal * edgeOffset;
+    DrawLineEx(start + offset, end + offset, edgeThickness, edgeColor);
+    DrawLineEx(start - offset, end - offset, edgeThickness, edgeColor);
+}
+
 auto drawGuiLabelCentered(const std::string& text, const r::Vector2& anchor) -> void
 {
     const auto size = measureGuiText(text);
@@ -4119,11 +4136,40 @@ auto drawWelcomeScreen() -> float
 {
     if (ctx().isGameStarted) { return {}; }
     const auto title = ctx().localizeText(GameText::Preferans);
-    const auto textSize = ctx().fontL.MeasureText(title, ctx().fontSizeL(), FontSpacing);
-    const auto x = (VirtualW - textSize.x) * 0.5f;
+    static constexpr auto proScale = 0.42f;
+    static constexpr auto proGap = 12.0f;
+    const auto titleFontSize = ctx().fontSizeL();
+    const auto proFontSize = titleFontSize * proScale;
+    const auto proText = "PRO";
+    const auto titleSize = ctx().fontL.MeasureText(title, titleFontSize, FontSpacing);
+    const auto proSize = ctx().fontM.MeasureText(proText, proFontSize, FontSpacing);
+    const auto totalWidth = titleSize.x + proGap + proSize.x;
+    const auto x = (VirtualW - totalWidth) * 0.5f;
     const auto y = VirtualH / 54.f;
-    ctx().fontL.DrawText(title, {x, y}, ctx().fontSizeL(), FontSpacing, getGuiColor(LABEL, TEXT_COLOR_NORMAL));
-    return y + textSize.y;
+    const auto titlePos = r::Vector2{x, y};
+    const auto proPos = r::Vector2{x + titleSize.x + proGap, y + titleFontSize * 0.14f};
+    const auto textColor = getGuiColor(LABEL, TEXT_COLOR_NORMAL);
+    const auto shadowColor = Fade(getGuiColor(BORDER_COLOR_NORMAL), 0.45f);
+    const auto proColor = yellowColor();
+    const auto proGlowColor = Fade(yellowColor(), 0.4f);
+    static constexpr auto underlineThickness = 4.5f;
+    static constexpr auto underlineOffsetY = 5.0f;
+    static constexpr auto underlineTiltY = 5.0f;
+    static constexpr auto underlineInsetX = 1.0f;
+    static constexpr auto underlineExtraWidth = 4.0f;
+    const auto underlineStartX = proPos.x - underlineInsetX;
+    const auto underlineEndX = proPos.x + proSize.x + underlineExtraWidth;
+
+    ctx().fontL.DrawText(title, titlePos + 4.0f, titleFontSize, FontSpacing, shadowColor);
+    ctx().fontL.DrawText(title, titlePos, titleFontSize, FontSpacing, textColor);
+    ctx().fontM.DrawText(proText, {proPos.x + 3.0f, proPos.y + 3.0f}, proFontSize, FontSpacing, proGlowColor);
+    ctx().fontM.DrawText(proText, proPos, proFontSize, FontSpacing, proColor);
+    drawSmoothAngledLine(
+        {underlineStartX, proPos.y + proSize.y + underlineOffsetY},
+        {underlineEndX, proPos.y + proSize.y + underlineOffsetY - underlineTiltY},
+        underlineThickness,
+        Fade(proColor, 0.85f));
+    return y + titleSize.y;
 }
 
 auto drawAgreements(const float reservedTop) -> void
