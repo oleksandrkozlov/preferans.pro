@@ -4620,16 +4620,47 @@ auto drawCardShineEffect(const Card& card, const bool isHovered, const r::Vector
 auto drawHandTurnAura(const r::Rectangle& cardsRect) -> void
 {
     if (isOfferPending() or ctx().isDealFinished) { return; };
-    static constexpr auto roundness = 0.05f;
+    static constexpr auto roundness = 0.08f;
     static constexpr auto segments = 0;
-    static constexpr auto margin = 2.f;
-    static constexpr auto size = 12.f;
-    static constexpr auto speed = 4.f;
-    static constexpr auto thick = CardWidth / 35.f;
+    static constexpr auto glowInset = 8.f;
+    static constexpr auto frameInset = 18.f;
+    static constexpr auto framePulse = 8.f;
+    static constexpr auto speed = 2.6f;
+    static constexpr auto cornerThickness = CardWidth / 24.f;
+    static constexpr auto frameThickness = CardWidth / 45.f;
+    static constexpr auto minCornerLength = CardWidth * 0.18f;
+
     const auto time = static_cast<float>(ctx().window.GetTime());
-    const auto pulse = (std::sin(time * speed) + 1.f) * 0.5f;
-    const auto ringColor = getGuiColor(BORDER_COLOR_NORMAL);
-    (cardsRect + (margin + pulse * size)).DrawRoundedLines(roundness, segments, thick, ringColor.Fade(0.95f));
+    const auto pulse = 0.5f + 0.5f * std::sin(time * speed);
+    const auto breath = pulse;
+    const auto glowRect = cardsRect + glowInset;
+    const auto frameRect = cardsRect + (frameInset + breath * framePulse);
+    const auto baseColor = getGuiColor(BORDER_COLOR_NORMAL);
+    const auto accentColor = getGuiColor(BORDER_COLOR_NORMAL);
+
+    glowRect.DrawRounded(roundness, segments, baseColor.Alpha(0.07f + breath * 0.05f));
+    (glowRect + 10.f).DrawRounded(roundness, segments, baseColor.Alpha(0.025f + breath * 0.025f));
+    frameRect.DrawRoundedLines(roundness, segments, frameThickness, baseColor.Alpha(0.12f + breath * 0.10f));
+
+    const auto cornerLength = std::min(
+        std::min(frameRect.width, frameRect.height) * (0.16f + breath * 0.06f),
+        CardWidth * 0.62f);
+    const auto bracketColor = accentColor;
+    const auto left = frameRect.x;
+    const auto right = frameRect.x + frameRect.width;
+    const auto top = frameRect.y;
+    const auto bottom = frameRect.y + frameRect.height;
+    const auto drawBracket = [&](const r::Vector2 corner, const float dirX, const float dirY) {
+        const auto horizontal = r::Vector2{corner.x + dirX * std::max(cornerLength, minCornerLength), corner.y};
+        const auto vertical = r::Vector2{corner.x, corner.y + dirY * std::max(cornerLength, minCornerLength)};
+        DrawLineEx(corner, horizontal, cornerThickness, bracketColor);
+        DrawLineEx(corner, vertical, cornerThickness, bracketColor);
+        corner.DrawCircle(cornerThickness * 0.42f, accentColor);
+    };
+    drawBracket({left, top}, 1.f, 1.f);
+    drawBracket({right, top}, -1.f, 1.f);
+    drawBracket({left, bottom}, 1.f, -1.f);
+    drawBracket({right, bottom}, -1.f, -1.f);
 }
 
 auto drawCards(const r::Vector2 pos, Player& player, const Shift shift) -> void
