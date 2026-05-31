@@ -6422,7 +6422,7 @@ auto drawSettingsMenu() -> void
         ctx().settingsMenu.windowBoxPos.x + margin,
         ctx().settingsMenu.windowBoxPos.y + RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT + margin * 1.5f};
     const auto langListView = r::Vector2{langGroupBox.x + margin, langGroupBox.y + margin};
-    static constexpr auto visibleColorSchemeCount = 2uz;
+    static constexpr auto visibleColorSchemeCount = 3uz;
     static const auto colorSchemeListViewH
         = static_cast<float>(visibleColorSchemeCount) * listViewEntryH + getStyle(LISTVIEW, BORDER_WIDTH) * 4.f;
     static const auto colorSchemeGroupBoxH = colorSchemeListViewH + margin * 2.f;
@@ -6435,12 +6435,11 @@ auto drawSettingsMenu() -> void
     const auto deckGroupBox
         = r::Vector2{colorSchemeListView.x - margin, colorSchemeListView.y + colorSchemeListViewH + margin * 2.5f};
     const auto deckListView = r::Vector2{deckGroupBox.x + margin, deckGroupBox.y + margin};
-    static constexpr auto otherGroupBoxH = margin * 5.5f;
+    static constexpr auto otherGroupBoxH = margin * 4.f;
     const auto otherGroupBox
         = r::Vector2{deckListView.x - margin, deckListView.y + deckListViewH + margin * 2.5f};
     const auto fpsCheckbox = r::Vector2{otherGroupBox.x + margin, otherGroupBox.y + margin};
-    const auto musicCheckbox = r::Vector2{otherGroupBox.x + margin, fpsCheckbox.y + margin * 1.5f};
-    const auto soundEffectsCheckbox = r::Vector2{otherGroupBox.x + margin, musicCheckbox.y + margin * 1.5f};
+    const auto soundEffectsCheckbox = r::Vector2{otherGroupBox.x + margin, fpsCheckbox.y + margin * 1.5f};
     static const auto windowBoxH = (fpsCheckbox.y + otherGroupBoxH) - ctx().settingsMenu.windowBoxPos.y;
     ctx().settingsMenu.windowBox = r::Rectangle{
         ctx().settingsMenu.windowBoxPos.x, ctx().settingsMenu.windowBoxPos.y, SettingsMenu::windowBoxW, windowBoxH};
@@ -6451,7 +6450,6 @@ auto drawSettingsMenu() -> void
         const auto colorSchemeText = ctx().localizeText(GameText::ColorScheme);
         const auto otherText = ctx().localizeText(GameText::Other);
         const auto fpsText = ctx().localizeText(GameText::ShowFps);
-        const auto musicText = ctx().localizeText(GameText::Music);
         ctx().settingsMenu.isVisible = not GuiWindowBox(
             ctx().settingsMenu.windowBox,
             settingsText.c_str());
@@ -6510,18 +6508,6 @@ auto drawSettingsMenu() -> void
                 saveToLocalStorage("show_ping_and_fps", "true");
             } else {
                 removeFromLocalStorage("show_ping_and_fps");
-            }
-        }
-        const auto music = ctx().settingsMenu.music;
-        GuiCheckBox(
-            {musicCheckbox.x, musicCheckbox.y, margin, margin}, musicText.c_str(), &ctx().settingsMenu.music);
-        if (music != ctx().settingsMenu.music) {
-            if (ctx().settingsMenu.music) {
-                removeFromLocalStorage("music");
-                if (ctx().isGameStarted) { playMusic(ctx().sound.soundTrack, ctx().sound.isSoundTrackPaused); }
-            } else {
-                saveToLocalStorage("music", "false");
-                ctx().sound.withoutMusic();
             }
         }
         const auto soundEffects = ctx().settingsMenu.soundEffects;
