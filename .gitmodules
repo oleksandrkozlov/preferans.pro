@@ -24,7 +24,7 @@
 	url = git@github.com:microsoft/GSL.git
 [submodule "client/deps/docopt.cpp"]
 	path = client/deps/docopt.cpp
-	url = https://github.com/docopt/docopt.cpp.git
+	url = git@github.com:docopt/docopt.cpp.git
 [submodule "client/deps/date"]
 	path = client/deps/date
 	url = git@github.com:HowardHinnant/date.git

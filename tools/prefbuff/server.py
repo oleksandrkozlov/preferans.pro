@@ -108,12 +108,11 @@ def _call_claude(stats_payload: dict[str, Any]) -> str:
 ROOT = Path(__file__).resolve().parents[2]
 PREF_PB2 = None
 EXCLUDED_PLAYER_IDS = {
-    "e0c7ad08-dba9-40f5-a226-b1f3e301c4ca",
-    "0bf3a0c0-06c9-48a5-af23-731d2fd82f78",
-    "5d6c8439-a8d4-4cef-94c2-79938f16124e",
+    "018e63b3-0621-4cf7-bb3f-77c1bc160d38",
+    "d17df67d-0bff-4594-b5c6-61fe69a743be",
+    "ff036b26-a85f-4b24-a2dc-beca0f02e964",
     "4a5303ba-c6e7-4b86-bec2-ad9109e5c40c",
 }
-
 
 def _load_pref_pb2() -> Any:
     gen_dir = Path(__file__).with_name("_generated")

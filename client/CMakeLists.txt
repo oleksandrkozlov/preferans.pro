@@ -3,7 +3,7 @@
 # Copyright (c) 2025 Oleksandr Kozlov
 
 cmake_minimum_required(VERSION 3.16.3)
-project(client VERSION 0.3.0 LANGUAGES C CXX)
+project(client VERSION 0.4.0 LANGUAGES C CXX)
 
 list(PREPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/../cmake)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -55,7 +55,7 @@ add_custom_command(
                                     $<TARGET_FILE_DIR:client>/../resources
 )
 
-target_link_libraries(client raylib fmt docopt)
+target_link_libraries(client raylib fmt docopt_s)
 if(CMAKE_BUILD_TYPE STREQUAL Debug)
     target_link_libraries(client ${CMAKE_BINARY_DIR}/lib/libprotobuf-lited.a)
 else()

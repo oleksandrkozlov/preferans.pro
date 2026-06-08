@@ -23,6 +23,6 @@ if [ -n "$DH" ]; then
   ssl_opts+=( "--dh=${DH}" )
 fi
 
-./build-server/bin/server $IP_ADDRESS $WS_PORT ./server/data/game.dat "${ssl_opts[@]}" > /dev/tty 2>&1 &
-python3 -m http.server -d build-client/bin -b $IP_ADDRESS $HTTP_PORT > /dev/tty 2>&1 &
-python3 tools/prefbuff/server.py ./server/data/game.dat --host $IP_ADDRESS --port 8081 &
+./build-dbg-server/bin/server $IP_ADDRESS $WS_PORT ./server/data/game.dat "${ssl_opts[@]}" > /dev/tty 2>&1 &
+python3 -m http.server -d ./build-dbg-client/bin -b $IP_ADDRESS $HTTP_PORT > /dev/tty 2>&1 &
+python3 ./tools/prefbuff/server.py ./server/data/game.dat --host $IP_ADDRESS --port 8081 &

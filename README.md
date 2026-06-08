@@ -54,21 +54,6 @@ Equivalent to:
 ```
 ./build.sh 0.0.0.0 ws 8080 Debug
 ```
-Which runs:
-```
-cmake -S server -B build-server -GNinja -DCMAKE_BUILD_TYPE=Debug
-cmake --build build-server --target server pref-cli
-mkdir -p ./server/data
-touch ./server/data/game.dat
-source /etc/profile.d/emscripten.sh
-emcmake cmake -S client -B build-client -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Debug \
-    -Dprotobuf_BUILD_TESTS=OFF -DPLATFORM=Web \
-    -DCMAKE_PREF_HOST=0.0.0.0 \
-    -DCMAKE_WEBSOCKET_URL=ws://0.0.0.0:8080 \
-    -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-cmake --build build-client -j `nproc` --target docopt fmt libprotobuf-lite raylib spdlog
-cmake --build build-client -j `nproc` --target client
-```
 For Release:
 ```
 ./build.sh yoursite.com wss 8080 Release
@@ -77,8 +62,8 @@ For Release:
 ### Add User
 
 ```
-cmake --build build-server --target pref-cli
-./build-server/bin/pref-cli ./server/data/game.dat add --user <name> <password>
+cmake --build <build> --target pref-cli
+./<build>/bin/pref-cli ./server/data/game.dat add --user <name> <password>
 ```
 
 ### Run
@@ -95,13 +80,6 @@ Equivalent to:
 ```
 ./run.sh 0.0.0.0 8000 8080
 ```
-Which runs:
-```
-./build-server/bin/server 0.0.0.0 8080 ./server/data/game.dat
-python3 -m http.server -d build-client/bin -b 0.0.0.0 8000
-python3 tools/prefbuff/server.py ./server/data/game.dat --host 0.0.0.0 --port 8081
-
-```
 For Release:
 * Obtain and install your TLS certificates using [Certbot Instructions | Certbot](https://certbot.eff.org/instructions?ws=nginx&os=pip) and [configure](server/config/yoursite.com) Nginx accordingly.
 * Start the HTTPS server:
@@ -110,13 +88,13 @@ nginx
 ```
 * Start the WebSocket and HTTP server:
 ```
-nohup ./build-server/bin/server <ip-address> 8080 ./server/data/game.dat \
+nohup ./<build>/bin/server <ip-address> 8080 ./server/data/game.dat \
     --cert=/path/to/fullchain.pem \
     --key=/path/to/privkey.pem \
     --dh=/path/to/ssl-dhparams.pem &
 ```
 ```
-python3 tools/prefbuff/server.py server/data/game.dat \
+python3 ./tools/prefbuff/server.py ./server/data/game.dat \
     --host 127.0.0.1 --port 8081  > prefbuff.log 2>&1 &
 ```
 
@@ -124,8 +102,8 @@ python3 tools/prefbuff/server.py server/data/game.dat \
 
 Requires a Debug build.
 ```
-cmake --build build-server --target test_server
-./build-server/bin/test_server
+cmake --build <build> --target test_server
+./<build>/bin/test_server
 ./tests/run-tests.sh
 ```
 
