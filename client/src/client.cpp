@@ -631,6 +631,50 @@ struct HandRevealAnimation {
     double durationMs{};
 };
 
+struct HandReflowAnimation {
+    std::map<CardNameView, std::pair<r::Vector2, r::Vector2>> positions;
+    double startedAt{};
+    double durationMs{};
+    int currentCardCount{};
+    int futureCardCount{};
+};
+
+struct HiddenHandReflowAnimation {
+    std::vector<std::pair<r::Vector2, r::Vector2>> positions;
+    double startedAt{};
+    double durationMs{};
+    int currentCardCount{};
+    int futureCardCount{};
+};
+
+struct MyHandDiscardAnimation {
+    std::vector<CardNameView> drawOrder;
+    std::map<CardNameView, std::pair<r::Vector2, r::Vector2>> remainingPositions;
+    double startedAt{};
+    double durationMs{};
+    int currentCardCount{};
+    int futureCardCount{};
+};
+
+struct HandLayoutMetrics {
+    r::Vector2 firstLeftTopPos;
+    float totalSpan{};
+};
+
+struct InitialDealCardAnimation {
+    const Card* card{};
+    r::Vector2 from{};
+    r::Vector2 to{};
+    double delayMs{};
+    double durationMs{};
+    bool drawBackOnly{};
+};
+
+struct InitialDealAnimation {
+    std::vector<InitialDealCardAnimation> cards;
+    double startedAt{};
+};
+
 struct LogoutMessage {
     bool isVisible{};
     static constexpr auto windowBoxW = VirtualW / 5.f + RAYGUI_TEXTINPUTBOX_BUTTON_PADDING * 2.f;
@@ -916,7 +960,12 @@ struct Context {
     PlayerId talonTransferPlayerId;
     std::vector<TalonDiscardCard> talonDiscards;
     std::vector<TrickCollectionCard> trickCollections;
+    std::map<PlayerId, InitialDealAnimation> initialDealAnimations;
     std::map<PlayerId, HandRevealAnimation> handRevealAnimations;
+    std::optional<HandReflowAnimation> myHandReflowAnimation;
+    std::map<PlayerId, HandReflowAnimation> visibleHandReflowAnimations;
+    std::map<PlayerId, HiddenHandReflowAnimation> hiddenHandReflowAnimations;
+    std::optional<MyHandDiscardAnimation> myHandDiscardAnimation;
     bool showScoreSheetAfterTrickCollection = false;
     bool isGameFreezed{};
     double tick = 0.0;
@@ -954,7 +1003,12 @@ struct Context {
         talonTransferPlayerId.clear();
         talonDiscards.clear();
         trickCollections.clear();
+        initialDealAnimations.clear();
         handRevealAnimations.clear();
+        myHandReflowAnimation.reset();
+        visibleHandReflowAnimations.clear();
+        hiddenHandReflowAnimations.clear();
+        myHandDiscardAnimation.reset();
         showScoreSheetAfterTrickCollection = false;
         isGameFreezed = false;
         isDealFinished = false;
@@ -1316,6 +1370,21 @@ struct PlaySlots {
     return r::Vector2{x, y};
 }
 
+[[nodiscard]] auto hiddenHandTopmostCardPosition(const PlayerId& playerId, const int cardCount) -> std::optional<r::Vector2>
+{
+    if (std::empty(playerId) or not ctx().areAllPlayersJoined() or cardCount <= 0) { return std::nullopt; }
+    const auto [leftOpponentId, rightOpponentId] = getOpponentIds();
+    const auto isRight = playerId == rightOpponentId;
+    const auto isLeft = playerId == leftOpponentId;
+    if (not isLeft and not isRight) { return std::nullopt; }
+    const auto tricksTaken = ctx().player(playerId).tricksTaken;
+    const auto cardGapY = sideHandGapY(cardCount, tricksTaken);
+    const auto totalHeight = (static_cast<float>(cardCount) - 1.f) * cardGapY + CardHeight;
+    const auto x = isRight ? VirtualW - CardWidth - CardBorderMargin : CardBorderMargin;
+    const auto y = (VirtualH - totalHeight) * 0.5f + static_cast<float>(cardCount - 1) * cardGapY;
+    return r::Vector2{x, y};
+}
+
 [[nodiscard]] auto isCardMoving(const PlayerId& playerId) -> bool
 {
     return rng::any_of(ctx().movingCards, equalTo(playerId), &MovingCard::playerId);
@@ -1494,6 +1563,551 @@ auto drawPassGameTalon() -> void
     return positions;
 }
 
+[[nodiscard]] auto visibleOpponentHandCardPositions(const PlayerId& playerId, const std::list<const Card*>& hand)
+    -> std::map<CardNameView, r::Vector2>
+{
+    const auto [leftId, rightId] = getOpponentIds();
+    const auto isRightSide = playerId == rightId;
+    if (!isRightSide && playerId != leftId) { return {}; }
+    const auto cardCount = std::ssize(hand);
+    const auto cardGapY = sideHandGapY(cardCount, ctx().player(playerId).tricksTaken);
+    const auto totalHeight = (static_cast<float>(cardCount) - 1.f) * cardGapY + CardHeight;
+    const auto x = isRightSide ? VirtualW - CardWidth - CardBorderMargin : CardBorderMargin;
+    const auto y = (VirtualH - totalHeight) * 0.5f;
+    auto positions = std::map<CardNameView, r::Vector2>{};
+    for (auto&& [i, card] : hand | rv::enumerate) {
+        positions.emplace(card->name, r::Vector2{x, y + static_cast<float>(i) * cardGapY});
+    }
+    return positions;
+}
+
+[[nodiscard]] auto visibleHandCardPositions(const PlayerId& playerId, const std::list<const Card*>& hand)
+    -> std::map<CardNameView, r::Vector2>
+{
+    return playerId == ctx().myPlayerId ? myHandCardPositions(hand) : visibleOpponentHandCardPositions(playerId, hand);
+}
+
+[[nodiscard]] auto hiddenHandLayoutPositions(const PlayerId& playerId, const int cardCount) -> std::vector<r::Vector2>;
+
+[[nodiscard]] auto initialDealDeckPosition() -> r::Vector2
+{
+    return {VirtualW * 0.5f - CardWidth * 0.5f, -CardHeight * 1.15f};
+}
+
+[[nodiscard]] auto initialDealOrder() -> std::vector<PlayerId>
+{
+    if (!ctx().areAllPlayersJoined()) { return {}; }
+    auto order = std::invoke([&] {
+        if (std::size(ctx().tableOrder) == NumberOfPlayers) { return ctx().tableOrder; }
+        auto fallback = std::vector<PlayerId>{ctx().myPlayerId};
+        const auto [leftId, rightId] = getOpponentIds();
+        fallback.push_back(leftId);
+        fallback.push_back(rightId);
+        return fallback;
+    });
+    if (!std::empty(ctx().forehandId)) {
+        if (const auto it = rng::find(order, ctx().forehandId); it != order.end()) { rng::rotate(order, it); }
+    }
+    return order;
+}
+
+auto startInitialDealAnimations() -> void
+{
+    if (!ctx().areAllPlayersJoined()) { return; }
+    const auto order = initialDealOrder();
+    if (std::empty(order)) { return; }
+    static constexpr auto initialDealSpeedMultiplier = 0.4;
+    const auto [leftId, rightId] = getOpponentIds();
+    auto targetsByPlayer = std::map<PlayerId, std::vector<InitialDealCardAnimation>>{};
+    const auto deck = initialDealDeckPosition();
+    const auto dealDurationMs = [&](const r::Vector2& to) { return cardMotionDurationMs(deck, to) * initialDealSpeedMultiplier; };
+    const auto myPositions = myHandCardPositions(ctx().myPlayer().hand);
+    for (const auto* card : ctx().myPlayer().hand) {
+        targetsByPlayer[ctx().myPlayerId].push_back(
+            InitialDealCardAnimation{card, deck, myPositions.at(card->name), 0.0, dealDurationMs(myPositions.at(card->name)), false});
+    }
+    for (const auto& playerId : {leftId, rightId}) {
+        auto& player = ctx().player(playerId);
+        if (!std::empty(player.hand)) {
+            const auto positions = visibleOpponentHandCardPositions(playerId, player.hand);
+            for (const auto* card : player.hand) {
+                const auto pos = positions.at(card->name);
+                targetsByPlayer[playerId].push_back(InitialDealCardAnimation{card, deck, pos, 0.0, dealDurationMs(pos), false});
+            }
+            continue;
+        }
+        const auto count = playerId == leftId ? ctx().leftCardCount : ctx().rightCardCount;
+        const auto positions = hiddenHandLayoutPositions(playerId, count);
+        for (const auto& pos : positions) {
+            targetsByPlayer[playerId].push_back(InitialDealCardAnimation{nullptr, deck, pos, 0.0, dealDurationMs(pos), true});
+        }
+    }
+
+    static constexpr auto dealStaggerMs = 22.0;
+    auto dealIndex = 0;
+    for (auto round = 0;; ++round) {
+        auto dealtAny = false;
+        for (const auto& playerId : order) {
+            auto& cards = targetsByPlayer[playerId];
+            const auto index = static_cast<std::size_t>(round);
+            if (index >= cards.size()) { continue; }
+            cards[index].delayMs = static_cast<double>(dealIndex) * dealStaggerMs;
+            ++dealIndex;
+            dealtAny = true;
+        }
+        if (!dealtAny) { break; }
+    }
+
+    const auto startedAt = emscripten_get_now();
+    ctx().initialDealAnimations.clear();
+    for (auto& [playerId, cards] : targetsByPlayer) {
+        ctx().initialDealAnimations.insert_or_assign(playerId, InitialDealAnimation{std::move(cards), startedAt});
+    }
+}
+
+auto drawInitialDealAnimation(const PlayerId& playerId) -> bool
+{
+    const auto it = ctx().initialDealAnimations.find(playerId);
+    if (it == ctx().initialDealAnimations.end()) { return false; }
+    const auto now = emscripten_get_now();
+    auto isFinished = true;
+    for (const auto& dealt : it->second.cards) {
+        const auto elapsed = now - it->second.startedAt - dealt.delayMs;
+        if (elapsed < 0.0) {
+            isFinished = false;
+            continue;
+        }
+        const auto progress = std::clamp(elapsed / dealt.durationMs, 0.0, 1.0);
+        const auto pos = Vector2Lerp(dealt.from, dealt.to, easeOutCubic(static_cast<float>(progress)));
+        if (dealt.drawBackOnly) {
+            drawBackCard({pos.x, pos.y, CardWidth, CardHeight});
+        } else if (dealt.card != nullptr) {
+            ctx().cardPositions[dealt.card->name] = pos;
+            dealt.card->texture.Draw(pos);
+        }
+        if (progress < 1.0) { isFinished = false; }
+    }
+    if (isFinished) { ctx().initialDealAnimations.erase(it); }
+    return true;
+}
+
+[[nodiscard]] auto isInitialDealAnimating() -> bool
+{
+    return !ctx().initialDealAnimations.empty();
+}
+
+[[nodiscard]] auto hiddenHandLayoutPositions(const PlayerId& playerId, const int cardCount) -> std::vector<r::Vector2>
+{
+    const auto [leftId, rightId] = getOpponentIds();
+    const auto isRightSide = playerId == rightId;
+    const auto tricksTaken = ctx().player(playerId).tricksTaken;
+    const auto cardGapY = sideHandGapY(cardCount, tricksTaken);
+    const auto totalHeight = (static_cast<float>(cardCount) - 1.f) * cardGapY + CardHeight;
+    const auto x = isRightSide ? VirtualW - CardWidth - CardBorderMargin : CardBorderMargin;
+    const auto y = (VirtualH - totalHeight) * 0.5f;
+    auto positions = std::vector<r::Vector2>{};
+    positions.reserve(static_cast<std::size_t>(cardCount));
+    for (auto i = 0; i < cardCount; ++i) { positions.push_back({x, y + static_cast<float>(i) * cardGapY}); }
+    return positions;
+}
+
+auto startHiddenHandReflowAnimation(const PlayerId& playerId, const int currentCardCount, const int futureCardCount, const double durationMs)
+    -> void
+{
+    auto animation = HiddenHandReflowAnimation{};
+    animation.startedAt = emscripten_get_now();
+    animation.durationMs = durationMs;
+    animation.currentCardCount = currentCardCount;
+    animation.futureCardCount = std::max(futureCardCount, 0);
+    const auto fromPositions = hiddenHandLayoutPositions(playerId, currentCardCount);
+    const auto toPositions = hiddenHandLayoutPositions(playerId, animation.futureCardCount);
+    const auto remainingCardCount = std::min(currentCardCount, animation.futureCardCount);
+    animation.positions.reserve(static_cast<std::size_t>(remainingCardCount));
+    for (auto i = 0; i < remainingCardCount; ++i) {
+        const auto index = static_cast<std::size_t>(i);
+        animation.positions.emplace_back(fromPositions.at(index), toPositions.at(index));
+    }
+    ctx().hiddenHandReflowAnimations.insert_or_assign(playerId, std::move(animation));
+}
+
+[[nodiscard]] auto hiddenHandReflowProgress(const PlayerId& playerId) -> std::optional<float>
+{
+    const auto it = ctx().hiddenHandReflowAnimations.find(playerId);
+    if (it == ctx().hiddenHandReflowAnimations.end()) { return std::nullopt; }
+    const auto progress
+        = static_cast<float>(std::clamp((emscripten_get_now() - it->second.startedAt) / it->second.durationMs, 0.0, 1.0));
+    const auto [leftId, rightId] = getOpponentIds();
+    const auto currentCardCount = playerId == leftId   ? ctx().leftCardCount
+                                : playerId == rightId ? ctx().rightCardCount
+                                                      : std::ssize(ctx().player(playerId).hand);
+    if (progress >= 1.0f && currentCardCount == it->second.futureCardCount) {
+        ctx().hiddenHandReflowAnimations.erase(it);
+        return std::nullopt;
+    }
+    return progress;
+}
+
+[[nodiscard]] auto hiddenHandVisualCardCount(const PlayerId& playerId, const int fallbackCount) -> int
+{
+    const auto it = ctx().hiddenHandReflowAnimations.find(playerId);
+    return it == ctx().hiddenHandReflowAnimations.end() ? fallbackCount : it->second.futureCardCount;
+}
+
+auto drawAnimatedHiddenHand(const PlayerId& playerId, const float progress) -> void
+{
+    const auto it = ctx().hiddenHandReflowAnimations.find(playerId);
+    if (it == ctx().hiddenHandReflowAnimations.end()) { return; }
+    const auto easedProgress = easeInOutCubic(progress);
+    for (const auto& [from, to] : it->second.positions) {
+        const auto pos = Vector2Lerp(from, to, easedProgress);
+        drawBackCard({pos.x, pos.y, CardWidth, CardHeight});
+    }
+}
+
+auto startMyHandReflowAnimation(const std::list<const Card*>& futureHand, const double durationMs) -> void
+{
+    auto animation = HandReflowAnimation{};
+    animation.startedAt = emscripten_get_now();
+    animation.durationMs = durationMs;
+    animation.currentCardCount = std::ssize(ctx().myPlayer().hand);
+    animation.futureCardCount = std::ssize(futureHand);
+    const auto currentPositions = myHandCardPositions(ctx().myPlayer().hand);
+    const auto futurePositions = myHandCardPositions(futureHand);
+    for (const auto& card : ctx().myPlayer().hand) {
+        const auto fromIt = currentPositions.find(card->name);
+        const auto toIt = futurePositions.find(card->name);
+        if (fromIt == currentPositions.end() || toIt == futurePositions.end()) { continue; }
+        animation.positions.insert_or_assign(card->name, std::pair{fromIt->second, toIt->second});
+    }
+    ctx().myHandReflowAnimation = std::move(animation);
+}
+
+auto startMyHandReflowAnimation(
+    const std::list<const Card*>& currentHand,
+    const std::list<const Card*>& futureHand,
+    const double durationMs) -> void
+{
+    auto animation = HandReflowAnimation{};
+    animation.startedAt = emscripten_get_now();
+    animation.durationMs = durationMs;
+    animation.currentCardCount = std::ssize(currentHand);
+    animation.futureCardCount = std::ssize(futureHand);
+    const auto currentPositions = myHandCardPositions(currentHand);
+    const auto futurePositions = myHandCardPositions(futureHand);
+    for (const auto& card : currentHand) {
+        const auto fromIt = currentPositions.find(card->name);
+        const auto toIt = futurePositions.find(card->name);
+        if (fromIt == currentPositions.end() || toIt == futurePositions.end()) { continue; }
+        animation.positions.insert_or_assign(card->name, std::pair{fromIt->second, toIt->second});
+    }
+    ctx().myHandReflowAnimation = std::move(animation);
+}
+
+auto startVisibleHandReflowAnimation(const PlayerId& playerId, const std::list<const Card*>& futureHand, const double durationMs) -> void
+{
+    if (playerId == ctx().myPlayerId) {
+        startMyHandReflowAnimation(futureHand, durationMs);
+        return;
+    }
+    auto animation = HandReflowAnimation{};
+    animation.startedAt = emscripten_get_now();
+    animation.durationMs = durationMs;
+    animation.currentCardCount = std::ssize(ctx().player(playerId).hand);
+    animation.futureCardCount = std::ssize(futureHand);
+    const auto currentPositions = visibleHandCardPositions(playerId, ctx().player(playerId).hand);
+    const auto futurePositions = visibleHandCardPositions(playerId, futureHand);
+    for (const auto& card : ctx().player(playerId).hand) {
+        const auto fromIt = currentPositions.find(card->name);
+        const auto toIt = futurePositions.find(card->name);
+        if (fromIt == currentPositions.end() || toIt == futurePositions.end()) { continue; }
+        animation.positions.insert_or_assign(card->name, std::pair{fromIt->second, toIt->second});
+    }
+    ctx().visibleHandReflowAnimations.insert_or_assign(playerId, std::move(animation));
+}
+
+auto startVisibleHandReflowAnimation(
+    const PlayerId& playerId,
+    const std::list<const Card*>& currentHand,
+    const std::list<const Card*>& futureHand,
+    const double durationMs) -> void
+{
+    if (playerId == ctx().myPlayerId) {
+        startMyHandReflowAnimation(futureHand, durationMs);
+        return;
+    }
+    auto animation = HandReflowAnimation{};
+    animation.startedAt = emscripten_get_now();
+    animation.durationMs = durationMs;
+    animation.currentCardCount = std::ssize(currentHand);
+    animation.futureCardCount = std::ssize(futureHand);
+    const auto currentPositions = visibleHandCardPositions(playerId, currentHand);
+    const auto futurePositions = visibleHandCardPositions(playerId, futureHand);
+    for (const auto& card : currentHand) {
+        const auto fromIt = currentPositions.find(card->name);
+        const auto toIt = futurePositions.find(card->name);
+        if (fromIt == currentPositions.end() || toIt == futurePositions.end()) { continue; }
+        animation.positions.insert_or_assign(card->name, std::pair{fromIt->second, toIt->second});
+    }
+    ctx().visibleHandReflowAnimations.insert_or_assign(playerId, std::move(animation));
+}
+
+[[nodiscard]] auto myHandReflowProgress() -> std::optional<float>
+{
+    if (!ctx().myHandReflowAnimation.has_value()) { return std::nullopt; }
+    const auto& animation = *ctx().myHandReflowAnimation;
+    const auto progress
+        = static_cast<float>(std::clamp((emscripten_get_now() - animation.startedAt) / animation.durationMs, 0.0, 1.0));
+    if (progress >= 1.0f && ctx().talonTransfers.empty() && std::ssize(ctx().myPlayer().hand) == animation.futureCardCount) {
+        ctx().myHandReflowAnimation.reset();
+        return std::nullopt;
+    }
+    if (progress >= 1.0f) { return 1.0f; }
+    return progress;
+}
+
+[[nodiscard]] auto myHandDiscardProgress() -> std::optional<float>;
+
+[[nodiscard]] auto visibleHandReflowProgress(const PlayerId& playerId) -> std::optional<float>
+{
+    const auto it = ctx().visibleHandReflowAnimations.find(playerId);
+    if (it == ctx().visibleHandReflowAnimations.end()) { return std::nullopt; }
+    const auto progress
+        = static_cast<float>(std::clamp((emscripten_get_now() - it->second.startedAt) / it->second.durationMs, 0.0, 1.0));
+    if (progress >= 1.0f && std::ssize(ctx().player(playerId).hand) == it->second.futureCardCount) {
+        ctx().visibleHandReflowAnimations.erase(it);
+        return std::nullopt;
+    }
+    if (progress >= 1.0f) { return 1.0f; }
+    return progress;
+}
+
+[[nodiscard]] auto visibleHandVisualCardCount(const PlayerId& playerId, const int fallbackCount) -> int
+{
+    const auto it = ctx().visibleHandReflowAnimations.find(playerId);
+    return it == ctx().visibleHandReflowAnimations.end() ? fallbackCount : it->second.futureCardCount;
+}
+
+[[nodiscard]] auto myHandLayoutMetricsForCount(const int cardCount) -> HandLayoutMetrics
+{
+    const auto safeCardCount = std::max(cardCount, 1);
+    const auto totalWidth
+        = (static_cast<float>(safeCardCount) - 1.f) * handCardGapX(static_cast<std::size_t>(safeCardCount)) + CardWidth;
+    return {{(VirtualW - totalWidth) * 0.5f, VirtualH - CardHeight - MyCardBorderMarginY}, totalWidth};
+}
+
+[[nodiscard]] auto currentMyHandLayoutMetrics() -> HandLayoutMetrics
+{
+    if (const auto progress = myHandDiscardProgress(); progress.has_value() && ctx().myHandDiscardAnimation.has_value()) {
+        const auto easedProgress = easeInOutCubic(*progress);
+        const auto from = myHandLayoutMetricsForCount(ctx().myHandDiscardAnimation->currentCardCount);
+        const auto to = myHandLayoutMetricsForCount(ctx().myHandDiscardAnimation->futureCardCount);
+        return {Vector2Lerp(from.firstLeftTopPos, to.firstLeftTopPos, easedProgress),
+                std::lerp(from.totalSpan, to.totalSpan, easedProgress)};
+    }
+    if (const auto progress = myHandReflowProgress(); progress.has_value() && ctx().myHandReflowAnimation.has_value()) {
+        const auto easedProgress = easeInOutCubic(*progress);
+        const auto from = myHandLayoutMetricsForCount(ctx().myHandReflowAnimation->currentCardCount);
+        const auto to = myHandLayoutMetricsForCount(ctx().myHandReflowAnimation->futureCardCount);
+        return {Vector2Lerp(from.firstLeftTopPos, to.firstLeftTopPos, easedProgress),
+                std::lerp(from.totalSpan, to.totalSpan, easedProgress)};
+    }
+    return myHandLayoutMetricsForCount(std::ssize(ctx().myPlayer().hand));
+}
+
+[[nodiscard]] auto sideHandLayoutMetricsForCount(const PlayerId& playerId, const int cardCount) -> HandLayoutMetrics
+{
+    const auto [leftId, rightId] = getOpponentIds();
+    const auto safeCardCount = std::max(cardCount, 1);
+    const auto totalHeight = (static_cast<float>(safeCardCount) - 1.f) * sideHandGapY(safeCardCount, ctx().player(playerId).tricksTaken)
+        + CardHeight;
+    const auto x = playerId == rightId ? VirtualW - CardWidth - CardBorderMargin : CardBorderMargin;
+    return {{x, (VirtualH - totalHeight) * 0.5f}, totalHeight};
+}
+
+[[nodiscard]] auto currentSideHandLayoutMetrics(const PlayerId& playerId, const int fallbackCount) -> HandLayoutMetrics
+{
+    if (const auto progress = visibleHandReflowProgress(playerId); progress.has_value()) {
+        const auto it = ctx().visibleHandReflowAnimations.find(playerId);
+        if (it != ctx().visibleHandReflowAnimations.end()) {
+            const auto easedProgress = easeInOutCubic(*progress);
+            const auto from = sideHandLayoutMetricsForCount(playerId, it->second.currentCardCount);
+            const auto to = sideHandLayoutMetricsForCount(playerId, it->second.futureCardCount);
+            return {Vector2Lerp(from.firstLeftTopPos, to.firstLeftTopPos, easedProgress),
+                    std::lerp(from.totalSpan, to.totalSpan, easedProgress)};
+        }
+    }
+    if (const auto progress = hiddenHandReflowProgress(playerId); progress.has_value()) {
+        const auto it = ctx().hiddenHandReflowAnimations.find(playerId);
+        if (it != ctx().hiddenHandReflowAnimations.end()) {
+            const auto easedProgress = easeInOutCubic(*progress);
+            const auto from = sideHandLayoutMetricsForCount(playerId, it->second.currentCardCount);
+            const auto to = sideHandLayoutMetricsForCount(playerId, it->second.futureCardCount);
+            return {Vector2Lerp(from.firstLeftTopPos, to.firstLeftTopPos, easedProgress),
+                    std::lerp(from.totalSpan, to.totalSpan, easedProgress)};
+        }
+    }
+    return sideHandLayoutMetricsForCount(playerId, fallbackCount);
+}
+
+[[nodiscard]] auto animatedMyHandCardPositions(const float progress) -> std::map<CardNameView, r::Vector2>
+{
+    auto positions = std::map<CardNameView, r::Vector2>{};
+    if (!ctx().myHandReflowAnimation.has_value()) { return positions; }
+    const auto easedProgress = easeInOutCubic(progress);
+    for (const auto* card : ctx().myPlayer().hand) {
+        const auto it = ctx().myHandReflowAnimation->positions.find(card->name);
+        if (it == ctx().myHandReflowAnimation->positions.end()) { continue; }
+        const auto [from, to] = it->second;
+        const auto pos = Vector2Lerp(from, to, easedProgress);
+        positions.insert_or_assign(card->name, pos);
+    }
+    return positions;
+}
+
+[[nodiscard]] auto animatedVisibleHandCardPositions(const PlayerId& playerId, const float progress)
+    -> std::map<CardNameView, r::Vector2>
+{
+    auto positions = std::map<CardNameView, r::Vector2>{};
+    const auto it = ctx().visibleHandReflowAnimations.find(playerId);
+    if (it == ctx().visibleHandReflowAnimations.end()) { return positions; }
+    const auto easedProgress = easeInOutCubic(progress);
+    for (const auto* card : ctx().player(playerId).hand) {
+        const auto posIt = it->second.positions.find(card->name);
+        if (posIt == it->second.positions.end()) { continue; }
+        const auto [from, to] = posIt->second;
+        positions.insert_or_assign(card->name, Vector2Lerp(from, to, easedProgress));
+    }
+    return positions;
+}
+
+[[nodiscard]] auto talonTransferDrawPosition(const TalonTransferCard& transfer) -> r::Vector2
+{
+    const auto progress = std::clamp((emscripten_get_now() - transfer.startedAt) / transfer.durationMs, 0.0, 1.0);
+    const auto motionProgress = easeInOutCubic(static_cast<float>(progress));
+    const auto center = Vector2Lerp(transfer.groupFromCenter, transfer.groupToCenter, motionProgress);
+    const auto fromOffset = Vector2Subtract(transfer.from, transfer.groupFromCenter);
+    const auto toOffset = Vector2Subtract(transfer.to, transfer.groupToCenter);
+    const auto offset = Vector2Lerp(fromOffset, toOffset, motionProgress);
+    return Vector2Add(center, offset);
+}
+
+auto drawAnimatedMyHandCards(Player& player, const float progress) -> void
+{
+    const auto positions = animatedMyHandCardPositions(progress);
+    if (positions.empty()) { return; }
+    const auto drawTalonTransfersInHand
+        = ctx().talonTransferPlayerId == ctx().myPlayerId && !ctx().talonTransfers.empty() && !ctx().talonTransferCards.empty();
+    if (!drawTalonTransfersInHand) {
+        for (const auto* card : player.hand) {
+            const auto it = positions.find(card->name);
+            if (it == positions.end()) { continue; }
+            ctx().cardPositions[card->name] = it->second;
+            card->texture.Draw(it->second);
+        }
+        return;
+    }
+
+    auto futureHand = player.hand;
+    for (const auto cardName : ctx().talonTransferCards) { futureHand.emplace_back(&getCard(cardName)); }
+    futureHand.sort(cardLess(&Card::name));
+
+    auto transferPositions = std::map<CardNameView, r::Vector2>{};
+    for (const auto& transfer : ctx().talonTransfers) {
+        transferPositions.insert_or_assign(transfer.card->name, talonTransferDrawPosition(transfer));
+    }
+
+    for (const auto* card : futureHand) {
+        if (const auto transferIt = transferPositions.find(card->name); transferIt != transferPositions.end()) {
+            card->texture.Draw(transferIt->second);
+            continue;
+        }
+        const auto it = positions.find(card->name);
+        if (it == positions.end()) { continue; }
+        ctx().cardPositions[card->name] = it->second;
+        card->texture.Draw(it->second);
+    }
+}
+
+auto drawAnimatedVisibleHandCards(Player& player, const float progress) -> void
+{
+    const auto positions = animatedVisibleHandCardPositions(player.id, progress);
+    if (positions.empty()) { return; }
+    for (const auto* card : player.hand) {
+        const auto it = positions.find(card->name);
+        if (it == positions.end()) { continue; }
+        ctx().cardPositions[card->name] = it->second;
+        card->texture.Draw(it->second);
+    }
+}
+
+auto startMyHandDiscardAnimation(
+    const std::list<const Card*>& currentHand,
+    const std::list<const Card*>& futureHand,
+    const double durationMs) -> void
+{
+    auto animation = MyHandDiscardAnimation{};
+    animation.startedAt = emscripten_get_now();
+    animation.durationMs = durationMs;
+    animation.currentCardCount = std::ssize(currentHand);
+    animation.futureCardCount = std::ssize(futureHand);
+    const auto currentPositions = myHandCardPositions(currentHand);
+    const auto futurePositions = myHandCardPositions(futureHand);
+    for (const auto* card : currentHand) {
+        animation.drawOrder.push_back(card->name);
+        if (const auto toIt = futurePositions.find(card->name); toIt != futurePositions.end()) {
+            animation.remainingPositions.insert_or_assign(card->name, std::pair{currentPositions.at(card->name), toIt->second});
+        }
+    }
+    ctx().myHandDiscardAnimation = std::move(animation);
+}
+
+[[nodiscard]] auto myHandDiscardProgress() -> std::optional<float>
+{
+    if (!ctx().myHandDiscardAnimation.has_value()) { return std::nullopt; }
+    const auto& animation = *ctx().myHandDiscardAnimation;
+    const auto progress
+        = static_cast<float>(std::clamp((emscripten_get_now() - animation.startedAt) / animation.durationMs, 0.0, 1.0));
+    if (progress >= 1.0f) { return 1.0f; }
+    return progress;
+}
+
+[[nodiscard]] auto talonDiscardDrawPosition(const TalonDiscardCard& discard) -> r::Vector2
+{
+    const auto progress = std::clamp((emscripten_get_now() - discard.startedAt) / discard.durationMs, 0.0, 1.0);
+    const auto motionProgress = easeInCubic(static_cast<float>(progress));
+    const auto center = Vector2Lerp(discard.groupFromCenter, discard.groupToCenter, motionProgress);
+    const auto fromOffset = Vector2Subtract(discard.from, discard.groupFromCenter);
+    const auto toOffset = Vector2Subtract(discard.to, discard.groupToCenter);
+    const auto offset = Vector2Lerp(fromOffset, toOffset, motionProgress);
+    return Vector2Add(center, offset);
+}
+
+auto drawAnimatedMyDiscardHand([[maybe_unused]] Player& player, const float progress) -> void
+{
+    if (!ctx().myHandDiscardAnimation.has_value()) { return; }
+    const auto easedProgress = easeInOutCubic(progress);
+    auto remainingPositions = std::map<CardNameView, r::Vector2>{};
+    for (const auto& [name, endpoints] : ctx().myHandDiscardAnimation->remainingPositions) {
+        const auto [from, to] = endpoints;
+        remainingPositions.insert_or_assign(name, Vector2Lerp(from, to, easedProgress));
+    }
+    auto discardPositions = std::map<CardNameView, r::Vector2>{};
+    for (const auto& discard : ctx().talonDiscards) {
+        if (discard.card == nullptr || discard.drawBackOnly) { continue; }
+        discardPositions.insert_or_assign(discard.card->name, talonDiscardDrawPosition(discard));
+    }
+    for (const auto cardName : ctx().myHandDiscardAnimation->drawOrder) {
+        if (const auto discardIt = discardPositions.find(cardName); discardIt != discardPositions.end()) {
+            getCard(cardName).texture.Draw(discardIt->second);
+            continue;
+        }
+        if (const auto remainingIt = remainingPositions.find(cardName); remainingIt != remainingPositions.end()) {
+            ctx().cardPositions[cardName] = remainingIt->second;
+            getCard(cardName).texture.Draw(remainingIt->second);
+        }
+    }
+}
+
 [[nodiscard]] auto hiddenHandTargetPositions(const PlayerId& playerId, const int addedCardCount) -> std::vector<r::Vector2>
 {
     const auto [leftId, rightId] = getOpponentIds();
@@ -1665,6 +2279,19 @@ auto startPendingTalonTransfer() -> void
     const auto fromCenter = positionsCenter(fromPositions);
     const auto toCenter = positionsCenter(toPositions);
     const auto durationMs = groupedAnchorMotionDurationMs(fromPositions, toPositions);
+    if (!flipToBack) {
+        auto futureHand = ctx().myPlayer().hand;
+        for (const auto cardName : ctx().pendingTalonReveal) { futureHand.emplace_back(&getCard(cardName)); }
+        futureHand.sort(cardLess(&Card::name));
+        startMyHandReflowAnimation(futureHand, durationMs);
+    } else {
+        const auto [leftId, rightId] = getOpponentIds();
+        const auto drawPosition = targetPlayerId == rightId ? DrawPosition::Right : DrawPosition::Left;
+        const auto currentCardCount = not std::empty(ctx().player(targetPlayerId).hand)
+            ? std::ssize(ctx().player(targetPlayerId).hand)
+            : (drawPosition == DrawPosition::Right ? ctx().rightCardCount : ctx().leftCardCount);
+        startHiddenHandReflowAnimation(targetPlayerId, currentCardCount, currentCardCount + transferCount, durationMs);
+    }
     const auto startedAt = emscripten_get_now();
     ctx().talonTransfers.clear();
     ctx().talonTransfers.reserve(std::size(ctx().pendingTalonReveal));
@@ -1709,6 +2336,8 @@ auto finalizePendingTalonTransfer() -> void
     }
     ctx().talonTransferCards.clear();
     ctx().talonTransferPlayerId.clear();
+    ctx().myHandReflowAnimation.reset();
+    ctx().hiddenHandReflowAnimations.clear();
 }
 
 auto drawTalonTransfers() -> void
@@ -1726,16 +2355,18 @@ auto drawTalonTransfers() -> void
         const auto flipProgress = static_cast<float>(progress);
         const auto visibleWidth = transfer.flipToBack ? CardWidth * std::abs(std::cos(std::numbers::pi_v<float> * flipProgress))
                                                       : CardWidth;
-        const auto dest = r::Rectangle{
-            pos.x + (CardWidth - visibleWidth) * 0.5f, pos.y, std::max(visibleWidth, 0.5f), CardHeight};
-        if (transfer.flipToBack) {
-            if (flipProgress < 0.5f) {
-                drawCardFace(*transfer.card, dest);
+        if (ctx().talonTransferPlayerId != ctx().myPlayerId) {
+            const auto dest = r::Rectangle{
+                pos.x + (CardWidth - visibleWidth) * 0.5f, pos.y, std::max(visibleWidth, 0.5f), CardHeight};
+            if (transfer.flipToBack) {
+                if (flipProgress < 0.5f) {
+                    drawCardFace(*transfer.card, dest);
+                } else {
+                    drawBackCard(dest);
+                }
             } else {
-                drawBackCard(dest);
+                drawCardFace(*transfer.card, dest);
             }
-        } else {
-            drawCardFace(*transfer.card, dest);
         }
         return progress >= 1.0;
     });
@@ -1745,6 +2376,9 @@ auto drawTalonTransfers() -> void
 auto startMyTalonDiscardAnimation(const std::vector<CardNameView>& cardNames) -> void
 {
     if (std::empty(cardNames)) { return; }
+    const auto currentHand = ctx().myPlayer().hand;
+    auto futureHand = currentHand;
+    futureHand.remove_if([&](const Card* card) { return rng::contains(cardNames, card->name); });
     const auto target = talonDiscardTargetPosition(ctx().myPlayerId);
     auto fromPositions = std::vector<r::Vector2>{};
     for (const auto cardName : cardNames) {
@@ -1756,6 +2390,7 @@ auto startMyTalonDiscardAnimation(const std::vector<CardNameView>& cardNames) ->
     const auto fromCenter = positionsCenter(fromPositions);
     const auto toCenter = positionsCenter(toPositions);
     const auto durationMs = groupedAnchorMotionDurationMs(fromPositions, toPositions);
+    startMyHandDiscardAnimation(currentHand, futureHand, durationMs);
     const auto startedAt = emscripten_get_now();
     for (const auto cardName : cardNames) {
         const auto it = ctx().cardPositions.find(cardName);
@@ -1768,12 +2403,18 @@ auto startMyTalonDiscardAnimation(const std::vector<CardNameView>& cardNames) ->
 auto startHiddenTalonDiscardAnimation(const PlayerId& playerId, const int discardCount = 2) -> void
 {
     if (discardCount <= 0) { return; }
+    const auto [leftId, rightId] = getOpponentIds();
+    const auto drawPosition = playerId == rightId ? DrawPosition::Right : DrawPosition::Left;
+    const auto currentCardCount = not std::empty(ctx().player(playerId).hand)
+        ? std::ssize(ctx().player(playerId).hand)
+        : (drawPosition == DrawPosition::Right ? ctx().rightCardCount : ctx().leftCardCount);
     const auto target = talonDiscardTargetPosition(playerId);
     const auto fromPositions = hiddenHandDiscardStartPositions(playerId, discardCount);
     const auto toPositions = std::vector<r::Vector2>(std::size(fromPositions), target);
     const auto fromCenter = positionsCenter(fromPositions);
     const auto toCenter = positionsCenter(toPositions);
     const auto durationMs = groupedAnchorMotionDurationMs(fromPositions, toPositions);
+    startHiddenHandReflowAnimation(playerId, currentCardCount, currentCardCount - discardCount, durationMs);
     const auto startedAt = emscripten_get_now();
     for (const auto& from : fromPositions) {
         ctx().talonDiscards.push_back(
@@ -1787,29 +2428,34 @@ auto drawTalonDiscards() -> void
     const auto now = emscripten_get_now();
     std::erase_if(ctx().talonDiscards, [&](const TalonDiscardCard& discard) {
         const auto progress = std::clamp((now - discard.startedAt) / discard.durationMs, 0.0, 1.0);
-        const auto motionProgress = easeInCubic(static_cast<float>(progress));
-        const auto center = Vector2Lerp(discard.groupFromCenter, discard.groupToCenter, motionProgress);
-        const auto fromOffset = Vector2Subtract(discard.from, discard.groupFromCenter);
-        const auto toOffset = Vector2Subtract(discard.to, discard.groupToCenter);
-        const auto offset = Vector2Lerp(fromOffset, toOffset, motionProgress);
-        const auto pos = Vector2Add(center, offset);
-        const auto visibleWidth = discard.flipToBack ? CardWidth * std::abs(std::cos(std::numbers::pi_v<float> * static_cast<float>(progress)))
-                                                     : CardWidth;
-        const auto dest = r::Rectangle{
-            pos.x + (CardWidth - visibleWidth) * 0.5f, pos.y, std::max(visibleWidth, 0.5f), CardHeight};
-        if (discard.drawBackOnly) {
-            drawBackCard(dest);
-        } else if (discard.flipToBack) {
-            if (progress < 0.5) {
-                drawCardFace(*discard.card, dest);
-            } else {
+        const auto isLocalDeclarerDiscard = ctx().myHandDiscardAnimation.has_value() && discard.card != nullptr && not discard.drawBackOnly;
+        if (not isLocalDeclarerDiscard) {
+            const auto motionProgress = easeInCubic(static_cast<float>(progress));
+            const auto center = Vector2Lerp(discard.groupFromCenter, discard.groupToCenter, motionProgress);
+            const auto fromOffset = Vector2Subtract(discard.from, discard.groupFromCenter);
+            const auto toOffset = Vector2Subtract(discard.to, discard.groupToCenter);
+            const auto offset = Vector2Lerp(fromOffset, toOffset, motionProgress);
+            const auto pos = Vector2Add(center, offset);
+            const auto visibleWidth
+                = discard.flipToBack ? CardWidth * std::abs(std::cos(std::numbers::pi_v<float> * static_cast<float>(progress)))
+                                     : CardWidth;
+            const auto dest = r::Rectangle{
+                pos.x + (CardWidth - visibleWidth) * 0.5f, pos.y, std::max(visibleWidth, 0.5f), CardHeight};
+            if (discard.drawBackOnly) {
                 drawBackCard(dest);
+            } else if (discard.flipToBack) {
+                if (progress < 0.5) {
+                    drawCardFace(*discard.card, dest);
+                } else {
+                    drawBackCard(dest);
+                }
+            } else {
+                drawCardFace(*discard.card, dest);
             }
-        } else {
-            drawCardFace(*discard.card, dest);
         }
         return progress >= 1.0;
     });
+    if (std::empty(ctx().talonDiscards)) { ctx().myHandDiscardAnimation.reset(); }
 }
 
 auto sendMessage(const EMSCRIPTEN_WEBSOCKET_T ws, const Message& msg) -> bool
@@ -2012,6 +2658,24 @@ auto sendMakeOffer(const Offer offer, const int tricks = 0) -> void
 auto sendPlayCard(const PlayerId& playerId, const CardNameView cardName) -> void
 {
     sendMessage(ctx().ws, makeMessage(makePlayCard(playerId, cardName)));
+}
+
+auto startMyPlayHandReflowAnimation(const CardNameView cardName, const r::Vector2& from) -> void
+{
+    const auto to = playedCardPosition(ctx().myPlayerId);
+    if (not to) { return; }
+    auto futureHand = ctx().myPlayer().hand;
+    futureHand.remove_if([&](const Card* card) { return card->name == cardName; });
+    startMyHandReflowAnimation(futureHand, cardMotionDurationMs(from, *to));
+}
+
+auto startVisiblePlayHandReflowAnimation(const PlayerId& playerId, const CardNameView cardName, const r::Vector2& from) -> void
+{
+    const auto to = playedCardPosition(playerId);
+    if (not to) { return; }
+    auto futureHand = ctx().player(playerId).hand;
+    futureHand.remove_if([&](const Card* card) { return card->name == cardName; });
+    startVisibleHandReflowAnimation(playerId, futureHand, cardMotionDurationMs(from, *to));
 }
 
 [[maybe_unused]] auto sendLog(const std::string& text) -> void
@@ -2311,6 +2975,12 @@ auto handleDealCards(const Message& msg) -> void
     for (const auto& cardName : dealCards->cards()) { player.hand.emplace_back(&getCard(cardName)); }
     PREF_I("{}, hand: {}", PREF_V(player.id), player.hand | rv::transform(&Card::name));
     player.sortCards();
+    const auto shouldAnimateInitialDeal = playerId == ctx().myPlayerId
+        && ctx().stage == GameStage::UNKNOWN
+        && std::empty(ctx().cardsOnTable)
+        && ctx().areAllPlayersJoined()
+        && !player.hand.empty();
+    if (shouldAnimateInitialDeal) { startInitialDealAnimations(); }
     if (shouldAnimateHandReveal) { startHandRevealAnimation(playerId); }
 }
 
@@ -2521,6 +3191,13 @@ auto handlePlayCard(const Message& msg) -> void
     const auto cardName = playCard->card();
     PREF_DI(playerId, cardName);
     const auto revealFromBack = playerId != ctx().myPlayerId && std::empty(ctx().player(playerId).hand);
+    const auto visibleHandBeforePlay = ctx().player(playerId).hand;
+    const auto hiddenCardCountBeforePlay = std::invoke([&] -> int {
+        if (not revealFromBack) { return 0; }
+        if (playerId == leftOpponentId) { return ctx().leftCardCount; }
+        if (playerId == rightOpponentId) { return ctx().rightCardCount; }
+        return 0;
+    });
 
     const auto& card = getCard(cardName);
     if (playerId == leftOpponentId) {
@@ -2533,9 +3210,21 @@ auto handlePlayCard(const Message& msg) -> void
     if (std::empty(ctx().cardsOnTable) and not ctx().passGameTalon.exists()) { ctx().leadSuit = cardSuit(cardName); }
     ctx().cardsOnTable.insert_or_assign(playerId, &card);
     if (not isCardMoving(playerId)) {
-        const auto fromHint = ctx().cardPositions.contains(cardName)
-            ? std::optional{ctx().cardPositions.at(cardName)}
-            : std::nullopt;
+        const auto fromHint = ctx().cardPositions.contains(cardName) ? std::optional{ctx().cardPositions.at(cardName)}
+                             : revealFromBack                     ? hiddenHandTopmostCardPosition(playerId, hiddenCardCountBeforePlay)
+                                                                  : std::nullopt;
+        const auto from = fromHint.value_or(handAnchor(playerId).value_or(playedCardPosition(playerId).value_or(r::Vector2{})));
+        const auto to = playedCardPosition(playerId).value_or(from);
+        const auto durationMs = cardMotionDurationMs(from, to);
+        if (playerId == ctx().myPlayerId && !ctx().myHandReflowAnimation.has_value()) {
+            auto futureHand = ctx().myPlayer().hand;
+            startMyHandReflowAnimation(visibleHandBeforePlay, futureHand, durationMs);
+        } else if (!revealFromBack && !std::empty(ctx().player(playerId).hand)) {
+            auto futureHand = ctx().player(playerId).hand;
+            startVisibleHandReflowAnimation(playerId, visibleHandBeforePlay, futureHand, durationMs);
+        } else if (revealFromBack) {
+            startHiddenHandReflowAnimation(playerId, hiddenCardCountBeforePlay, hiddenCardCountBeforePlay - 1, durationMs);
+        }
         startCardMove(playerId, card, fromHint, revealFromBack, true);
     }
 }
@@ -3757,7 +4446,7 @@ auto drawCards(const r::Vector2 pos, Player& player, const Shift shift) -> void
             = isMyHand and isTalonPicking and (not std::empty(ctx().pendingTalonReveal) or isTalonTransferAnimating());
         const auto isSelectedForTalon = isMyHand and isTalonPicking and isTalonDiscardSelected(card->name);
         const auto isTalonSelectionLocked
-            = isMyHand and isTalonPicking and (std::size(ctx().discardedTalon) == 2);
+            = isMyHand and isTalonPicking and ctx().talonDiscardPopUp.isVisible and (std::size(ctx().discardedTalon) == 2);
         const auto isHovered = (not ctx().isGameFreezed and isRightTurn)
             and not isOfferPending()
             and not isTalonRevealPending
@@ -3771,10 +4460,11 @@ auto drawCards(const r::Vector2 pos, Player& player, const Shift shift) -> void
             = (isHovered or isSelectedForTalon) ? (hasShift(shift, Positive) ? Offset : -Offset) : 0.f;
         const auto cardPosition = toPos(i, offset);
         ctx().cardPositions[card->name] = cardPosition;
-        const auto canPlay = not ctx().cardsOnTable.contains(player.id) and isCardPlayable;
-        const auto canPlayWithTalon
-            = isTalonSelectionLocked ? (isSelectedForTalon ? true : false) : canPlay;
-        drawCardShineEffect(*card, isHovered, cardPosition, tintForCard(canPlayWithTalon));
+        const auto shouldTintForPlayability = isRightTurn and ctx().stage == GameStage::PLAYING and not ctx().cardsOnTable.contains(player.id);
+        const auto useWhiteTint = isTalonSelectionLocked ? isSelectedForTalon
+                                 : shouldTintForPlayability ? isCardPlayable
+                                                            : true;
+        drawCardShineEffect(*card, isHovered, cardPosition, tintForCard(useWhiteTint));
     }
 }
 
@@ -3788,8 +4478,17 @@ auto drawBackCards(const int cardCount, const r::Vector2& pos, const float cardG
 auto drawCards(const r::Vector2& pos, Player& player, const Shift shift, const int cardCount, const float cardGapY) -> void
 {
     if (cardCount == 0) { return; }
+    if (drawInitialDealAnimation(player.id)) { return; }
     if (std::empty(player.hand)) {
+        if (const auto progress = hiddenHandReflowProgress(player.id); progress.has_value()) {
+            drawAnimatedHiddenHand(player.id, *progress);
+            return;
+        }
         drawBackCards(cardCount, pos, cardGapY);
+        return;
+    }
+    if (const auto progress = visibleHandReflowProgress(player.id); progress.has_value()) {
+        drawAnimatedVisibleHandCards(player, *progress);
         return;
     }
     if (const auto progress = handRevealProgress(player.id); progress.has_value()) {
@@ -3824,6 +4523,13 @@ auto drawCards(const r::Vector2& pos, Player& player, const Shift shift, const i
         player.id == ctx().forehandId ? fmt::format(" {}", PREF_FOREHAND_SIGN) : "");
 }
 
+[[nodiscard]] auto composePlayerNameDecorationsOnly(const Player& player) -> std::pair<std::string, std::string>
+{
+    const auto prefix = ctx().turnPlayerId == player.id and not ctx().isGameFreezed ? fmt::format("{} ", PREF_ARROW_RIGHT) : "";
+    const auto suffix = player.id == ctx().forehandId ? fmt::format(" {}", PREF_FOREHAND_SIGN) : "";
+    return {prefix, suffix};
+}
+
 [[nodiscard]] auto drawPlayerName(const r::Vector2& pos, const Player& player, const Shift shift) -> r::Vector2
 {
     const auto turnColor = std::invoke([&] {
@@ -3836,13 +4542,24 @@ auto drawCards(const r::Vector2& pos, Player& player, const Shift shift, const i
         return BASE_COLOR_PRESSED;
     });
     const auto trick = player.tricksTaken != 0 ? fmt::format(" {}", prettifyNumber(player.tricksTaken)) : "";
+    const auto [prefix, suffix] = composePlayerNameDecorationsOnly(player);
     auto anchor = withGuiStyle(LABEL, TEXT_COLOR_NORMAL, turnColor, player.id == ctx().turnPlayerId, [&] {
         return drawGameText(pos, composePlayerName(player), shift).second;
+    });
+    const auto trickAnchor = std::invoke([&] {
+        using enum Shift;
+        const auto prefixSize = measureGuiText(prefix);
+        const auto suffixSize = measureGuiText(suffix);
+        if (hasShift(shift, Horizont)) {
+            const auto shiftX = (prefixSize.x - suffixSize.x) * 0.5f;
+            return r::Vector2{anchor.x + shiftX, anchor.y};
+        }
+        return anchor;
     });
     withGuiFont(ctx().fontL, [&] {
         withGuiStyle(DEFAULT, TEXT_SIZE, static_cast<int>(ctx().fontSizeL() * 0.85f), [&] {
             const auto y = player.id != ctx().myPlayerId ? (CardHeight * 0.6f) : (CardHeight * 0.15f);
-            return drawGameText({anchor.x, anchor.y - y}, trick, Shift::None);
+            return drawGameText({trickAnchor.x, trickAnchor.y - y}, trick, Shift::None);
         });
     });
     return anchor;
@@ -4067,7 +4784,7 @@ auto drawOfferButton() -> void
     const auto textSize = measureGuiText(text);
     const auto textX = pos.x + (totalWidth - textSize.x) * 0.5f;
     const auto textY = (pos.y + BidOriginY + BidMenuH - textSize.y) * 0.5f;
-    if (isOfferPending() or isOfferUiVisible()) { return textY; };
+    if (isOfferPending() or isOfferUiVisible() or isInitialDealAnimating()) { return textY; };
     if (ctx().isGameFreezed
         or ((not isPlayerTurn(playerId) or isSomeonePlayingOnBehalfOf(playerId))
             and not isPlayerTurnOnBehalfOfSomeone)) {
@@ -4183,15 +4900,21 @@ auto drawMyHand() -> void
     using enum Shift;
     using enum DrawPosition;
     auto& player = ctx().myPlayer();
-    const auto cardCount = std::ssize(player.hand);
-    const auto totalWidth = (static_cast<float>(cardCount) - 1.f) * handCardGapX(std::size(player.hand)) + CardWidth;
-    const auto cardFirstLeftTopPos
-        = r::Vector2{(VirtualW - totalWidth) * 0.5f, VirtualH - CardHeight - MyCardBorderMarginY};
+    const auto layout = currentMyHandLayoutMetrics();
+    const auto cardFirstLeftTopPos = layout.firstLeftTopPos;
+    const auto totalWidth = layout.totalSpan;
     const auto cardCenterY = cardFirstLeftTopPos.y + CardHeight * 0.5f;
     const auto cardFirstLeftCenterPos = r::Vector2{cardFirstLeftTopPos.x, cardCenterY};
     const auto cardLastRightCenterPos = r::Vector2{cardFirstLeftTopPos.x + totalWidth, cardCenterY};
     static constexpr auto gap = CardHeight / 27.f;
-    drawCards(cardFirstLeftTopPos, player, Negative | Horizont);
+    if (drawInitialDealAnimation(player.id)) {
+    } else if (const auto progress = myHandDiscardProgress(); progress.has_value()) {
+        drawAnimatedMyDiscardHand(player, *progress);
+    } else if (const auto reflowProgress = myHandReflowProgress(); reflowProgress.has_value()) {
+        drawAnimatedMyHandCards(player, *reflowProgress);
+    } else {
+        drawCards(cardFirstLeftTopPos, player, Negative | Horizont);
+    }
     const auto playerNameCenter = drawPlayerName(cardFirstLeftCenterPos, player, Negative | Horizont);
     const auto yourTurnTopY = drawYourTurn(cardFirstLeftTopPos, gap, totalWidth, ctx().myPlayerId);
     drawWhist(cardLastRightCenterPos, player, Positive | Horizont) //
@@ -4231,12 +4954,13 @@ auto drawOpponentHand(const DrawPosition drawPosition) -> void
         return isRight(drawPosition) ? rightId : leftId;
     });
     auto& player = ctx().player(playerId);
-    const auto cardCount = pref::cardCount(player.hand, drawPosition);
-    const auto cardGapY = sideHandGapY(cardCount, player.tricksTaken);
-    const auto totalHeight = (static_cast<float>(cardCount) - 1.f) * cardGapY + CardHeight;
-    const auto cardFirstLeftTopPos = r::Vector2{
-        isRight(drawPosition) ? VirtualW - CardWidth - CardBorderMargin : CardBorderMargin,
-        (VirtualH - totalHeight) * 0.5f};
+    const auto baseCardCount = pref::cardCount(player.hand, drawPosition);
+    const auto layout = currentSideHandLayoutMetrics(playerId, baseCardCount);
+    const auto cardCount = std::empty(player.hand) ? hiddenHandVisualCardCount(playerId, baseCardCount)
+                                                   : visibleHandVisualCardCount(playerId, baseCardCount);
+    const auto cardGapY = sideHandGapY(std::max(cardCount, 1), player.tricksTaken);
+    const auto totalHeight = layout.totalSpan;
+    const auto cardFirstLeftTopPos = layout.firstLeftTopPos;
     const auto cardCenterX = cardFirstLeftTopPos.x + CardWidth * 0.5f;
     const auto cardFirstCenterTopPos = r::Vector2{cardCenterX, cardFirstLeftTopPos.y};
     const auto cardLastCenterBottomPos = r::Vector2{cardCenterX, cardFirstLeftTopPos.y + totalHeight};
@@ -4375,7 +5099,7 @@ auto sendBid(const std::string& bid, const bool finalBid, const std::size_t rank
 
 auto drawBiddingMenu() -> void
 {
-    if (not ctx().bidding.isVisible) { return; }
+    if (not ctx().bidding.isVisible or isInitialDealAnimating()) { return; }
     const auto isBlockedByOverlay = isMouseOverBlockingOverlay();
     const auto finalBid = (std::size(ctx().discardedTalon) == 2) or (ctx().stage == WITHOUT_TALON);
     auto enabled = BidTable | rv::join | rv::filter([&](const std::string_view bid) {
@@ -6478,7 +7202,14 @@ auto handleMousePress() -> void
                 ctx().cardsOnTable.insert_or_assign(playerId, &getCard(card.name));
                 sendPlayCard(playerId, card.name);
             },
-            [&](const Card& card, const r::Vector2& from) { startCardMove(playerId, card, from); });
+            [&](const Card& card, const r::Vector2& from) {
+                if (playerId == ctx().myPlayerId) {
+                    startMyPlayHandReflowAnimation(card.name, from);
+                } else {
+                    startVisiblePlayHandReflowAnimation(playerId, card.name, from);
+                }
+                startCardMove(playerId, card, from);
+            });
         return;
     } else {
         if (not isMyTurn()) { return; }
