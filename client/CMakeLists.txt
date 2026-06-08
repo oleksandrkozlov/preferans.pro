@@ -3,7 +3,7 @@
 # Copyright (c) 2025 Oleksandr Kozlov
 
 cmake_minimum_required(VERSION 3.16.3)
-project(client VERSION 0.4.0 LANGUAGES C CXX)
+project(client VERSION 0.5.0 LANGUAGES C CXX)
 
 list(PREPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/../cmake)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
