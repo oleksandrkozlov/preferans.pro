@@ -1,6 +1,6 @@
 <div align="center">
 
-# Preferans
+<a href="https://preferans.pro"><img src="client/resources/images/title.png" width="50%"></a>
 
 ![Preferans](https://repository-images.githubusercontent.com/1111279870/c43d87f8-c852-40dd-8c5e-9e579ed8603b)
 
