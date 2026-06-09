@@ -2,12 +2,15 @@
 #
 # Copyright (c) 2025 Oleksandr Kozlov
 
+# For example:
+#
 # https://certbot.eff.org/instructions?ws=nginx&os=pip
+#
 # sudo rm /etc/nginx/sites-enabled/default
-# sudo touch /etc/nginx/sites-available/yoursite.com
-# sudo ln -s /etc/nginx/sites-available/yoursite.com /etc/nginx/sites-enabled/
+# sudo touch /etc/nginx/sites-available/preferans.pro
+# sudo ln -s /etc/nginx/sites-available/preferans.pro /etc/nginx/sites-enabled/
 # sudo nginx -t
-# sudo chmod o+x /home/olkozlo/Work/workspace/preferans
+# sudo chmod o+x $HOME/Work/workspace/preferans
 # sudo nginx
 
 server {

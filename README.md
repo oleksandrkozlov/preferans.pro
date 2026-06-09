@@ -56,7 +56,7 @@ Equivalent to:
 ```
 For Release:
 ```
-./build.sh yoursite.com wss 8080 Release
+./build.sh preferans.pro wss 8080 Release
 ```
 
 ### Add User
@@ -81,7 +81,7 @@ Equivalent to:
 ./run.sh 0.0.0.0 8000 8080
 ```
 For Release:
-* Obtain and install your TLS certificates using [Certbot Instructions | Certbot](https://certbot.eff.org/instructions?ws=nginx&os=pip) and [configure](server/config/yoursite.com) Nginx accordingly.
+* Obtain and install your TLS certificates using [Certbot Instructions | Certbot](https://certbot.eff.org/instructions?ws=nginx&os=pip) and [configure](server/config/preferans.pro) Nginx accordingly.
 * Start the HTTPS server:
 ```
 nginx
