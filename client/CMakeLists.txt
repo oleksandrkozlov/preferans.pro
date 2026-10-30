@@ -103,6 +103,7 @@ target_link_libraries(
     ${CMAKE_BINARY_DIR}/lib/libabsl_spinlock_wait.a
     ${CMAKE_BINARY_DIR}/lib/libabsl_throw_delegate.a
     ${CMAKE_BINARY_DIR}/lib/libabsl_raw_logging_internal.a
+    ${CMAKE_BINARY_DIR}/lib/libabsl_int128.a
 )
 
 target_include_directories(client SYSTEM PUBLIC ${CMAKE_BINARY_DIR}/_deps/raylib-build/raylib/include)
